@@ -1,3 +1,5 @@
+import { cleanServingDescription } from "./serving";
+
 export type OFFFood = {
   name: string;
   brand?: string;
@@ -25,16 +27,6 @@ type OFFProduct = {
     erythritol_100g?: number;
   };
 };
-
-function cleanServingDescription(s: string | undefined): string | undefined {
-  if (!s) return s;
-  const trimmed = s.trim();
-  // OFF often prefixes descriptions with "1 " (e.g. "1 Slice (30 g)", "1 cup")
-  // because their model assumes a single-serving display. We have an explicit
-  // servings stepper, so "1 × 1 Slice" is redundant. Strip the leading "1 ".
-  // Don't strip if it's "1.5" or "10" — only the literal leading single digit 1.
-  return trimmed.replace(/^1\s+(?=\D)/, "");
-}
 
 function toFood(p: OFFProduct): OFFFood | null {
   const carbs = Number(p.nutriments?.carbohydrates_100g);

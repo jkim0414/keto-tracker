@@ -16,6 +16,7 @@ import PendingItemsList, {
   itemTotalCarbs,
 } from "@/components/PendingItemsList";
 import BarcodeScanner from "@/components/BarcodeScanner";
+import { cleanServingDescription } from "@/lib/serving";
 
 type OFFFood = {
   name: string;
@@ -95,7 +96,7 @@ export default function LogPage() {
       name: r.name,
       servings: 1,
       netCarbsPerServingG: carbs,
-      servingDescription: r.servingDescription ?? undefined,
+      servingDescription: cleanServingDescription(r.servingDescription),
       source: "recent",
     });
   }
@@ -606,7 +607,7 @@ function PhotoTab({ onAdd }: { onAdd: (items: PendingItem[]) => void }) {
           name: it.name,
           servings: 1,
           netCarbsPerServingG: it.netCarbsG,
-          servingDescription: it.servingDescription,
+          servingDescription: cleanServingDescription(it.servingDescription),
           source: "photo",
           confidence: it.confidence,
           notes: it.notes,
@@ -738,7 +739,7 @@ function TextTab({ onAdd }: { onAdd: (items: PendingItem[]) => void }) {
           name: it.name,
           servings: 1,
           netCarbsPerServingG: it.netCarbsG,
-          servingDescription: it.servingDescription,
+          servingDescription: cleanServingDescription(it.servingDescription),
           source: "text",
           rawInput: text,
           confidence: it.confidence,
