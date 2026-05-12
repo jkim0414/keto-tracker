@@ -9,8 +9,12 @@ import {
   Sparkles,
   Loader2,
   Plus,
+  Clock,
 } from "lucide-react";
-import PendingItemsList, { PendingItem } from "@/components/PendingItemsList";
+import PendingItemsList, {
+  PendingItem,
+  itemTotalCarbs,
+} from "@/components/PendingItemsList";
 import BarcodeScanner from "@/components/BarcodeScanner";
 
 type OFFFood = {
@@ -23,6 +27,13 @@ type OFFFood = {
   imageUrl?: string;
 };
 
+type RecentEntry = {
+  name: string;
+  netCarbsG: string;
+  servingDescription: string | null;
+  source: string;
+};
+
 type Tab = "search" | "scan" | "photo" | "text";
 
 const tabs: { id: Tab; label: string; icon: typeof Search }[] = [
@@ -32,11 +43,38 @@ const tabs: { id: Tab; label: string; icon: typeof Search }[] = [
   { id: "text", label: "Describe", icon: Sparkles },
 ];
 
+function offToPending(
+  food: OFFFood,
+  source: "search" | "barcode"
+): PendingItem {
+  const grams = food.servingGrams ?? 100;
+  const perServing = (food.netCarbsPer100g * grams) / 100;
+  const servingDesc =
+    food.servingDescription ||
+    (food.servingGrams ? `${grams}g` : "100g");
+  return {
+    name: food.brand ? `${food.name} (${food.brand})` : food.name,
+    servings: 1,
+    netCarbsPerServingG: Math.max(0, Math.round(perServing * 100) / 100),
+    servingDescription: servingDesc,
+    source,
+    barcode: food.barcode,
+    servingGrams: grams,
+  };
+}
+
 export default function LogPage() {
   const router = useRouter();
   const [tab, setTab] = useState<Tab>("search");
   const [pending, setPending] = useState<PendingItem[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  const [recents, setRecents] = useState<RecentEntry[]>([]);
+
+  useEffect(() => {
+    fetch("/api/foods/recent")
+      .then((r) => (r.ok ? r.json() : { recent: [] }))
+      .then((d: { recent: RecentEntry[] }) => setRecents(d.recent || []));
+  }, []);
 
   function addItem(item: PendingItem) {
     setPending((p) => [...p, item]);
@@ -51,15 +89,41 @@ export default function LogPage() {
     setPending((p) => p.filter((_, idx) => idx !== i));
   }
 
+  function addFromRecent(r: RecentEntry) {
+    const carbs = parseFloat(r.netCarbsG) || 0;
+    addItem({
+      name: r.name,
+      servings: 1,
+      netCarbsPerServingG: carbs,
+      servingDescription: r.servingDescription ?? undefined,
+      source: "recent",
+    });
+  }
+
   async function submitAll() {
     if (pending.length === 0) return;
     setSubmitting(true);
     try {
       for (const item of pending) {
+        const total = itemTotalCarbs(item);
+        const desc =
+          item.servings && item.servings !== 1 && item.servingDescription
+            ? `${item.servings} × ${item.servingDescription}`
+            : item.servingDescription;
         await fetch("/api/foods", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(item),
+          body: JSON.stringify({
+            name: item.name,
+            netCarbsG: Math.round(total * 10) / 10,
+            servingDescription: desc,
+            servingGrams: item.servingGrams
+              ? item.servingGrams * (item.servings || 1)
+              : undefined,
+            source: item.source === "recent" ? "search" : item.source,
+            rawInput: item.rawInput,
+            barcode: item.barcode,
+          }),
         });
       }
       router.push("/");
@@ -72,6 +136,10 @@ export default function LogPage() {
   return (
     <div>
       <h1 className="text-2xl font-semibold mb-3">Log food</h1>
+
+      {recents.length > 0 && (
+        <RecentsList items={recents} onAdd={addFromRecent} />
+      )}
 
       <div className="grid grid-cols-4 gap-1 p-1 bg-card border border-border rounded-2xl mb-4">
         {tabs.map((t) => {
@@ -110,32 +178,55 @@ export default function LogPage() {
   );
 }
 
-function foodToPending(
-  food: OFFFood,
-  source: "search" | "barcode",
-  servings: number
-): PendingItem {
-  const grams = food.servingGrams ?? 100;
-  const netCarbs = (food.netCarbsPer100g * grams * servings) / 100;
-  const servingDesc = food.servingDescription
-    ? `${servings} × ${food.servingDescription}`
-    : `${(grams * servings).toFixed(0)}g`;
-  return {
-    name: food.brand ? `${food.name} (${food.brand})` : food.name,
-    netCarbsG: Math.max(0, Math.round(netCarbs * 10) / 10),
-    servingDescription: servingDesc,
-    source,
-    barcode: food.barcode,
-    servingGrams: grams * servings,
-  };
+function RecentsList({
+  items,
+  onAdd,
+}: {
+  items: RecentEntry[];
+  onAdd: (r: RecentEntry) => void;
+}) {
+  return (
+    <section className="mb-4">
+      <div className="flex items-center gap-1.5 mb-2 px-1 text-xs text-muted uppercase tracking-wide">
+        <Clock size={12} />
+        Recent
+      </div>
+      <ul className="bg-card border border-border rounded-2xl divide-y divide-border overflow-hidden">
+        {items.map((r, i) => (
+          <li key={`${r.name}-${i}`}>
+            <button
+              onClick={() => onAdd(r)}
+              className="w-full px-4 py-2.5 flex items-center justify-between gap-3 text-left active:bg-border/40"
+            >
+              <div className="min-w-0">
+                <div className="font-medium truncate">{r.name}</div>
+                {r.servingDescription && (
+                  <div className="text-xs text-muted truncate">
+                    {r.servingDescription}
+                  </div>
+                )}
+              </div>
+              <div className="flex items-center gap-3 pl-2">
+                <span className="text-sm tabular-nums font-medium text-muted">
+                  {parseFloat(r.netCarbsG).toFixed(1)}
+                  <span className="text-xs ml-0.5">g</span>
+                </span>
+                <span className="w-7 h-7 rounded-full bg-accent text-accent-fg flex items-center justify-center">
+                  <Plus size={14} strokeWidth={2.5} />
+                </span>
+              </div>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
 }
 
 function SearchTab({ onAdd }: { onAdd: (item: PendingItem) => void }) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<OFFFood[]>([]);
   const [loading, setLoading] = useState(false);
-  const [selected, setSelected] = useState<OFFFood | null>(null);
-  const [servings, setServings] = useState(1);
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
@@ -147,9 +238,7 @@ function SearchTab({ onAdd }: { onAdd: (item: PendingItem) => void }) {
     debounceRef.current = setTimeout(async () => {
       setLoading(true);
       try {
-        const res = await fetch(
-          `/api/foods?q=${encodeURIComponent(query)}`
-        );
+        const res = await fetch(`/api/foods?q=${encodeURIComponent(query)}`);
         if (res.ok) {
           const data = await res.json();
           setResults(data.results);
@@ -162,79 +251,6 @@ function SearchTab({ onAdd }: { onAdd: (item: PendingItem) => void }) {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
   }, [query]);
-
-  if (selected) {
-    const grams = selected.servingGrams ?? 100;
-    const netCarbs = (selected.netCarbsPer100g * grams * servings) / 100;
-    return (
-      <div className="bg-card border border-border rounded-2xl p-4 space-y-4">
-        <div>
-          <div className="font-medium">{selected.name}</div>
-          {selected.brand && (
-            <div className="text-sm text-muted">{selected.brand}</div>
-          )}
-        </div>
-        <div className="flex items-center gap-3">
-          <label className="text-sm text-muted">Servings</label>
-          <div className="flex items-center bg-background border border-border rounded-lg">
-            <button
-              onClick={() => setServings((s) => Math.max(0.25, s - 0.5))}
-              className="px-3 py-1.5 text-lg"
-            >
-              −
-            </button>
-            <input
-              type="number"
-              step="0.25"
-              value={servings}
-              onChange={(e) =>
-                setServings(Math.max(0.25, parseFloat(e.target.value) || 0))
-              }
-              className="w-14 text-center bg-transparent tabular-nums focus:outline-none"
-            />
-            <button
-              onClick={() => setServings((s) => s + 0.5)}
-              className="px-3 py-1.5 text-lg"
-            >
-              +
-            </button>
-          </div>
-          <span className="text-sm text-muted">
-            × {selected.servingDescription ?? `${grams}g`}
-          </span>
-        </div>
-        <div className="flex items-end justify-between">
-          <div>
-            <div className="text-xs text-muted">Net carbs</div>
-            <div className="text-2xl font-semibold tabular-nums">
-              {netCarbs.toFixed(1)}
-              <span className="text-sm text-muted font-normal ml-1">g</span>
-            </div>
-          </div>
-          <div className="flex gap-2">
-            <button
-              onClick={() => setSelected(null)}
-              className="px-4 py-2 rounded-lg border border-border text-sm"
-            >
-              Back
-            </button>
-            <button
-              onClick={() => {
-                onAdd(foodToPending(selected, "search", servings));
-                setSelected(null);
-                setQuery("");
-                setResults([]);
-                setServings(1);
-              }}
-              className="px-4 py-2 rounded-lg bg-accent text-accent-fg text-sm font-medium"
-            >
-              Add
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div>
@@ -265,7 +281,11 @@ function SearchTab({ onAdd }: { onAdd: (item: PendingItem) => void }) {
           {results.map((r, i) => (
             <li key={`${r.barcode ?? i}`}>
               <button
-                onClick={() => setSelected(r)}
+                onClick={() => {
+                  onAdd(offToPending(r, "search"));
+                  setQuery("");
+                  setResults([]);
+                }}
                 className="w-full px-4 py-3 text-left active:bg-border/40 flex items-center justify-between gap-3"
               >
                 <div className="min-w-0">
@@ -273,8 +293,14 @@ function SearchTab({ onAdd }: { onAdd: (item: PendingItem) => void }) {
                   <div className="text-xs text-muted truncate">
                     {r.brand ? `${r.brand} · ` : ""}
                     {r.netCarbsPer100g.toFixed(1)}g net carbs / 100g
+                    {r.servingDescription
+                      ? ` · ${r.servingDescription}`
+                      : ""}
                   </div>
                 </div>
+                <span className="w-7 h-7 rounded-full bg-accent text-accent-fg flex items-center justify-center shrink-0">
+                  <Plus size={14} strokeWidth={2.5} />
+                </span>
               </button>
             </li>
           ))}
@@ -343,7 +369,7 @@ function ManualEntry({ onAdd }: { onAdd: (item: PendingItem) => void }) {
       <input
         value={serving}
         onChange={(e) => setServing(e.target.value)}
-        placeholder="Serving (optional, e.g. '1 cup')"
+        placeholder="Serving (e.g. '1 cup')"
         className="w-full bg-background border border-border rounded-lg px-3 py-2 focus:outline-none focus:border-accent"
       />
 
@@ -374,7 +400,7 @@ function ManualEntry({ onAdd }: { onAdd: (item: PendingItem) => void }) {
             step="0.1"
             value={netCarbsInput}
             onChange={(e) => setNetCarbsInput(e.target.value)}
-            placeholder="Net carbs"
+            placeholder="Net carbs per serving"
             className="flex-1 bg-background border border-border rounded-lg px-3 py-2 focus:outline-none focus:border-accent"
           />
           <span className="text-muted">g</span>
@@ -400,7 +426,7 @@ function ManualEntry({ onAdd }: { onAdd: (item: PendingItem) => void }) {
             onChange={setAllulose}
           />
           <div className="flex items-center justify-between pt-1 text-sm">
-            <span className="text-muted">Net carbs</span>
+            <span className="text-muted">Net carbs per serving</span>
             <span className="font-semibold tabular-nums">
               {computedNet.toFixed(1)}
               <span className="text-muted font-normal ml-1">g</span>
@@ -421,7 +447,8 @@ function ManualEntry({ onAdd }: { onAdd: (item: PendingItem) => void }) {
           onClick={() => {
             onAdd({
               name: name.trim(),
-              netCarbsG: Math.round(computedNet * 10) / 10,
+              servings: 1,
+              netCarbsPerServingG: Math.round(computedNet * 10) / 10,
               servingDescription: serving.trim() || undefined,
               source: "manual",
             });
@@ -491,7 +518,7 @@ function ScanTab({ onAdd }: { onAdd: (item: PendingItem) => void }) {
         return;
       }
       const data = await res.json();
-      onAdd(foodToPending(data.product, "barcode", 1));
+      onAdd(offToPending(data.product, "barcode"));
     } finally {
       setLoading(false);
     }
@@ -577,7 +604,8 @@ function PhotoTab({ onAdd }: { onAdd: (items: PendingItem[]) => void }) {
           notes?: string;
         }) => ({
           name: it.name,
-          netCarbsG: it.netCarbsG,
+          servings: 1,
+          netCarbsPerServingG: it.netCarbsG,
           servingDescription: it.servingDescription,
           source: "photo",
           confidence: it.confidence,
@@ -708,7 +736,8 @@ function TextTab({ onAdd }: { onAdd: (items: PendingItem[]) => void }) {
           notes?: string;
         }) => ({
           name: it.name,
-          netCarbsG: it.netCarbsG,
+          servings: 1,
+          netCarbsPerServingG: it.netCarbsG,
           servingDescription: it.servingDescription,
           source: "text",
           rawInput: text,
