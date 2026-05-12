@@ -5,6 +5,7 @@ export type OFFFood = {
   netCarbsPer100g: number;
   carbsPer100g: number;
   fiberPer100g: number;
+  polyolsPer100g: number;
   servingGrams?: number;
   servingDescription?: string;
   imageUrl?: string;
@@ -20,6 +21,8 @@ type OFFProduct = {
   nutriments?: {
     carbohydrates_100g?: number;
     fiber_100g?: number;
+    polyols_100g?: number;
+    erythritol_100g?: number;
   };
 };
 
@@ -27,7 +30,13 @@ function toFood(p: OFFProduct): OFFFood | null {
   const carbs = Number(p.nutriments?.carbohydrates_100g);
   if (!isFinite(carbs)) return null;
   const fiber = Number(p.nutriments?.fiber_100g) || 0;
-  const net = Math.max(0, carbs - fiber);
+  // Sugar alcohols (polyols) and erythritol aren't metabolized like sugar.
+  // OFF reports them under `polyols_100g`. Some products break out erythritol separately.
+  const polyols = Math.max(
+    Number(p.nutriments?.polyols_100g) || 0,
+    Number(p.nutriments?.erythritol_100g) || 0
+  );
+  const net = Math.max(0, carbs - fiber - polyols);
   const servingGrams =
     typeof p.serving_quantity === "number"
       ? p.serving_quantity
@@ -41,6 +50,7 @@ function toFood(p: OFFProduct): OFFFood | null {
     netCarbsPer100g: net,
     carbsPer100g: carbs,
     fiberPer100g: fiber,
+    polyolsPer100g: polyols,
     servingGrams: servingGrams && isFinite(servingGrams) ? servingGrams : undefined,
     servingDescription: p.serving_size || undefined,
     imageUrl: p.image_front_small_url,
@@ -57,7 +67,7 @@ export async function searchFoods(query: string, limit = 12): Promise<OFFFood[]>
   url.searchParams.set("page_size", String(limit));
   url.searchParams.set(
     "fields",
-    "product_name,brands,code,serving_size,serving_quantity,image_front_small_url,nutriments"
+    "product_name,brands,code,serving_size,serving_quantity,image_front_small_url,nutriments,polyols_100g,erythritol_100g"
   );
 
   const res = await fetch(url, {

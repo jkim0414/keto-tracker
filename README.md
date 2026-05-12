@@ -90,11 +90,10 @@ Open the deployed URL on your phone → Share → **Add to Home Screen**. The ap
 
 - **Photo and natural-language parsing are estimates.** Vision models guess portion sizes; correct them in the review list before tapping **Log all**.
 - **OpenFoodFacts data is crowdsourced.** Brand names and serving sizes can vary by region. Cross-check the label if a number looks off.
-- **Net carbs** = total carbohydrates − fiber. Sugar alcohols (allulose, erythritol) are not yet subtracted — keto products like Halo Top will read higher than the label claims.
+- **Net carbs** = total carbohydrates − fiber − sugar alcohols − allulose. Erythritol, allulose, and other polyols are subtracted in full (the standard keto convention) for OpenFoodFacts data, AI-parsed entries, and the "From label" manual entry calculator. Manual "Net carbs" direct entry assumes the user has already done their own subtraction.
 
 ## Roadmap
 
-- Sugar-alcohol subtraction for label parsing
 - Streak counter for days under goal
 - "My foods" cache so frequent items skip the API roundtrip
 - CSV export

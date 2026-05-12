@@ -287,8 +287,40 @@ function SearchTab({ onAdd }: { onAdd: (item: PendingItem) => void }) {
 function ManualEntry({ onAdd }: { onAdd: (item: PendingItem) => void }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
-  const [carbs, setCarbs] = useState("");
   const [serving, setServing] = useState("");
+  const [mode, setMode] = useState<"direct" | "label">("direct");
+  const [netCarbsInput, setNetCarbsInput] = useState("");
+  const [totalCarbs, setTotalCarbs] = useState("");
+  const [fiber, setFiber] = useState("");
+  const [sugarAlcohols, setSugarAlcohols] = useState("");
+  const [allulose, setAllulose] = useState("");
+
+  function reset() {
+    setOpen(false);
+    setName("");
+    setServing("");
+    setMode("direct");
+    setNetCarbsInput("");
+    setTotalCarbs("");
+    setFiber("");
+    setSugarAlcohols("");
+    setAllulose("");
+  }
+
+  const computedNet =
+    mode === "label"
+      ? Math.max(
+          0,
+          (parseFloat(totalCarbs) || 0) -
+            (parseFloat(fiber) || 0) -
+            (parseFloat(sugarAlcohols) || 0) -
+            (parseFloat(allulose) || 0)
+        )
+      : parseFloat(netCarbsInput) || 0;
+
+  const canSubmit =
+    name.trim().length > 0 &&
+    (mode === "direct" ? netCarbsInput !== "" : totalCarbs !== "");
 
   if (!open) {
     return (
@@ -314,48 +346,124 @@ function ManualEntry({ onAdd }: { onAdd: (item: PendingItem) => void }) {
         placeholder="Serving (optional, e.g. '1 cup')"
         className="w-full bg-background border border-border rounded-lg px-3 py-2 focus:outline-none focus:border-accent"
       />
-      <div className="flex items-center gap-2">
-        <input
-          type="number"
-          inputMode="decimal"
-          step="0.1"
-          value={carbs}
-          onChange={(e) => setCarbs(e.target.value)}
-          placeholder="Net carbs"
-          className="flex-1 bg-background border border-border rounded-lg px-3 py-2 focus:outline-none focus:border-accent"
-        />
-        <span className="text-muted">g</span>
+
+      <div className="flex gap-1 p-1 bg-background border border-border rounded-lg">
+        <button
+          onClick={() => setMode("direct")}
+          className={`flex-1 py-1.5 rounded text-xs font-medium ${
+            mode === "direct" ? "bg-accent text-accent-fg" : "text-muted"
+          }`}
+        >
+          Net carbs
+        </button>
+        <button
+          onClick={() => setMode("label")}
+          className={`flex-1 py-1.5 rounded text-xs font-medium ${
+            mode === "label" ? "bg-accent text-accent-fg" : "text-muted"
+          }`}
+        >
+          From label
+        </button>
       </div>
+
+      {mode === "direct" ? (
+        <div className="flex items-center gap-2">
+          <input
+            type="number"
+            inputMode="decimal"
+            step="0.1"
+            value={netCarbsInput}
+            onChange={(e) => setNetCarbsInput(e.target.value)}
+            placeholder="Net carbs"
+            className="flex-1 bg-background border border-border rounded-lg px-3 py-2 focus:outline-none focus:border-accent"
+          />
+          <span className="text-muted">g</span>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          <LabelField
+            label="Total carbs"
+            value={totalCarbs}
+            onChange={setTotalCarbs}
+          />
+          <LabelField label="Fiber" value={fiber} onChange={setFiber} />
+          <LabelField
+            label="Sugar alcohols"
+            hint="erythritol, xylitol, etc."
+            value={sugarAlcohols}
+            onChange={setSugarAlcohols}
+          />
+          <LabelField
+            label="Allulose"
+            hint="not always grouped under sugar alcohols"
+            value={allulose}
+            onChange={setAllulose}
+          />
+          <div className="flex items-center justify-between pt-1 text-sm">
+            <span className="text-muted">Net carbs</span>
+            <span className="font-semibold tabular-nums">
+              {computedNet.toFixed(1)}
+              <span className="text-muted font-normal ml-1">g</span>
+            </span>
+          </div>
+        </div>
+      )}
+
       <div className="flex gap-2">
         <button
-          onClick={() => {
-            setOpen(false);
-            setName("");
-            setCarbs("");
-            setServing("");
-          }}
+          onClick={reset}
           className="flex-1 px-4 py-2 rounded-lg border border-border text-sm"
         >
           Cancel
         </button>
         <button
-          disabled={!name.trim() || !carbs}
+          disabled={!canSubmit}
           onClick={() => {
             onAdd({
               name: name.trim(),
-              netCarbsG: parseFloat(carbs) || 0,
+              netCarbsG: Math.round(computedNet * 10) / 10,
               servingDescription: serving.trim() || undefined,
               source: "manual",
             });
-            setOpen(false);
-            setName("");
-            setCarbs("");
-            setServing("");
+            reset();
           }}
           className="flex-1 px-4 py-2 rounded-lg bg-accent text-accent-fg text-sm font-medium disabled:opacity-50"
         >
           Add
         </button>
+      </div>
+    </div>
+  );
+}
+
+function LabelField({
+  label,
+  hint,
+  value,
+  onChange,
+}: {
+  label: string;
+  hint?: string;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <div className="flex items-center gap-3">
+      <div className="flex-1 min-w-0">
+        <div className="text-sm">{label}</div>
+        {hint && <div className="text-[10px] text-muted">{hint}</div>}
+      </div>
+      <div className="flex items-center gap-1">
+        <input
+          type="number"
+          inputMode="decimal"
+          step="0.1"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder="0"
+          className="w-20 text-right bg-background border border-border rounded-lg px-2 py-1.5 focus:outline-none focus:border-accent tabular-nums"
+        />
+        <span className="text-xs text-muted">g</span>
       </div>
     </div>
   );
@@ -417,9 +525,33 @@ function PhotoTab({ onAdd }: { onAdd: (items: PendingItem[]) => void }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [caption, setCaption] = useState("");
+  const [file, setFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
 
-  async function handleFile(file: File) {
+  useEffect(() => {
+    return () => {
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+    };
+  }, [previewUrl]);
+
+  function pickFile(f: File) {
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    setFile(f);
+    setPreviewUrl(URL.createObjectURL(f));
+    setError(null);
+  }
+
+  function reset() {
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    setFile(null);
+    setPreviewUrl(null);
+    setCaption("");
+    setError(null);
+  }
+
+  async function analyze() {
+    if (!file) return;
     setLoading(true);
     setError(null);
     try {
@@ -456,7 +588,7 @@ function PhotoTab({ onAdd }: { onAdd: (items: PendingItem[]) => void }) {
         setError("No food detected. Try a clearer photo or use Describe.");
       } else {
         onAdd(items);
-        setCaption("");
+        reset();
       }
     } finally {
       setLoading(false);
@@ -465,16 +597,6 @@ function PhotoTab({ onAdd }: { onAdd: (items: PendingItem[]) => void }) {
 
   return (
     <div className="bg-card border border-border rounded-2xl p-4 space-y-3">
-      <p className="text-sm text-muted">
-        Snap a photo of your plate or a label. AI will estimate net carbs —
-        review before logging.
-      </p>
-      <input
-        value={caption}
-        onChange={(e) => setCaption(e.target.value)}
-        placeholder="Optional: add details (e.g. 'small portion')"
-        className="w-full bg-background border border-border rounded-lg px-3 py-2 focus:outline-none focus:border-accent text-sm"
-      />
       <input
         ref={fileRef}
         type="file"
@@ -483,25 +605,74 @@ function PhotoTab({ onAdd }: { onAdd: (items: PendingItem[]) => void }) {
         className="hidden"
         onChange={(e) => {
           const f = e.target.files?.[0];
-          if (f) handleFile(f);
+          if (f) pickFile(f);
           e.target.value = "";
         }}
       />
-      <button
-        onClick={() => fileRef.current?.click()}
-        disabled={loading}
-        className="w-full bg-accent text-accent-fg font-medium py-3 rounded-xl active:scale-[0.98] transition disabled:opacity-60 flex items-center justify-center gap-2"
-      >
-        {loading ? (
-          <>
-            <Loader2 size={18} className="spin" /> Analyzing…
-          </>
-        ) : (
-          <>
+
+      {!file ? (
+        <>
+          <p className="text-sm text-muted">
+            Snap a photo of your plate or a label. After selecting, you can
+            add details before analyzing.
+          </p>
+          <button
+            onClick={() => fileRef.current?.click()}
+            className="w-full bg-accent text-accent-fg font-medium py-3 rounded-xl active:scale-[0.98] transition flex items-center justify-center gap-2"
+          >
             <Camera size={18} /> Take or choose photo
-          </>
-        )}
-      </button>
+          </button>
+        </>
+      ) : (
+        <>
+          {previewUrl && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={previewUrl}
+              alt="Selected food"
+              className="w-full max-h-72 object-cover rounded-xl border border-border"
+            />
+          )}
+          <textarea
+            value={caption}
+            onChange={(e) => setCaption(e.target.value)}
+            placeholder="Optional: add details (e.g. 'small portion', 'no rice', 'cooked in butter')"
+            rows={2}
+            className="w-full bg-background border border-border rounded-lg px-3 py-2 focus:outline-none focus:border-accent text-sm resize-none"
+          />
+          <div className="flex gap-2">
+            <button
+              onClick={() => fileRef.current?.click()}
+              disabled={loading}
+              className="px-4 py-2.5 rounded-xl border border-border text-sm font-medium disabled:opacity-60"
+            >
+              Retake
+            </button>
+            <button
+              onClick={reset}
+              disabled={loading}
+              className="px-4 py-2.5 rounded-xl border border-border text-sm font-medium disabled:opacity-60"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={analyze}
+              disabled={loading}
+              className="flex-1 bg-accent text-accent-fg font-medium py-2.5 rounded-xl active:scale-[0.98] transition disabled:opacity-60 flex items-center justify-center gap-2"
+            >
+              {loading ? (
+                <>
+                  <Loader2 size={18} className="spin" /> Analyzing…
+                </>
+              ) : (
+                <>
+                  <Sparkles size={18} /> Analyze
+                </>
+              )}
+            </button>
+          </div>
+        </>
+      )}
       {error && <p className="text-sm text-danger">{error}</p>}
     </div>
   );
