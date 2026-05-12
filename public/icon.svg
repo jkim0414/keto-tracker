@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="112" fill="#16a34a"/>
+  <circle cx="256" cy="256" r="148" fill="none" stroke="#ffffff" stroke-width="40" stroke-linecap="round" stroke-dasharray="700 1000" transform="rotate(-90 256 256)"/>
+  <text x="256" y="296" font-family="-apple-system, system-ui, sans-serif" font-size="160" font-weight="700" fill="#ffffff" text-anchor="middle">K</text>
+</svg>
