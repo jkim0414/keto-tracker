@@ -26,6 +26,16 @@ type OFFProduct = {
   };
 };
 
+function cleanServingDescription(s: string | undefined): string | undefined {
+  if (!s) return s;
+  const trimmed = s.trim();
+  // OFF often prefixes descriptions with "1 " (e.g. "1 Slice (30 g)", "1 cup")
+  // because their model assumes a single-serving display. We have an explicit
+  // servings stepper, so "1 × 1 Slice" is redundant. Strip the leading "1 ".
+  // Don't strip if it's "1.5" or "10" — only the literal leading single digit 1.
+  return trimmed.replace(/^1\s+(?=\D)/, "");
+}
+
 function toFood(p: OFFProduct): OFFFood | null {
   const carbs = Number(p.nutriments?.carbohydrates_100g);
   if (!isFinite(carbs)) return null;
@@ -52,7 +62,7 @@ function toFood(p: OFFProduct): OFFFood | null {
     fiberPer100g: fiber,
     polyolsPer100g: polyols,
     servingGrams: servingGrams && isFinite(servingGrams) ? servingGrams : undefined,
-    servingDescription: p.serving_size || undefined,
+    servingDescription: cleanServingDescription(p.serving_size),
     imageUrl: p.image_front_small_url,
   };
 }
@@ -67,7 +77,7 @@ export async function searchFoods(query: string, limit = 12): Promise<OFFFood[]>
   url.searchParams.set("page_size", String(limit));
   url.searchParams.set(
     "fields",
-    "product_name,brands,code,serving_size,serving_quantity,image_front_small_url,nutriments,polyols_100g,erythritol_100g"
+    "product_name,brands,code,serving_size,serving_quantity,image_front_small_url,nutriments"
   );
 
   const res = await fetch(url, {
