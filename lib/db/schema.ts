@@ -15,6 +15,11 @@ export const foodEntries = pgTable("food_entries", {
   name: text("name").notNull(),
   servingDescription: text("serving_description"),
   servingGrams: numeric("serving_grams"),
+  // Servings is the editable quantity (e.g., "1.5 of X"). Per-serving carbs is
+  // the immutable "what one serving costs" value. Total (net_carbs_g) =
+  // servings × net_carbs_per_serving_g, denormalized for fast SUM queries.
+  servings: numeric("servings").notNull().default("1"),
+  netCarbsPerServingG: numeric("net_carbs_per_serving_g"),
   netCarbsG: numeric("net_carbs_g").notNull(),
   source: text("source").notNull(),
   rawInput: text("raw_input"),

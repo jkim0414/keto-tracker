@@ -12,6 +12,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import CarbRing from "@/components/CarbRing";
+import { ServingsStepper } from "@/components/PendingItemsList";
 import { kgToLb, localDateString } from "@/lib/date";
 import { bucketColor, carbBucket, KETOSIS_CEILING_G } from "@/lib/keto";
 
@@ -20,6 +21,8 @@ type FoodEntry = {
   eatenAt: string;
   name: string;
   netCarbsG: string;
+  netCarbsPerServingG: string | null;
+  servings: string;
   servingDescription: string | null;
   source: string;
 };
@@ -267,34 +270,34 @@ function TodayFoodRow({
   onChanged: () => void;
   onDelete: () => void;
 }) {
+  const initialServings = parseFloat(entry.servings) || 1;
+  // New rows have netCarbsPerServingG set; legacy rows (before backfill)
+  // store only the total, so we derive per-serving from total / servings.
+  const perServing = entry.netCarbsPerServingG
+    ? parseFloat(entry.netCarbsPerServingG)
+    : parseFloat(entry.netCarbsG) / (initialServings || 1);
   const [editing, setEditing] = useState(false);
-  const [name, setName] = useState(entry.name);
-  const [serving, setServing] = useState(entry.servingDescription ?? "");
-  const [carbs, setCarbs] = useState(parseFloat(entry.netCarbsG).toFixed(1));
+  const [draftServings, setDraftServings] = useState(initialServings);
   const [saving, setSaving] = useState(false);
 
+  const draftTotal = draftServings * perServing;
+
   function startEdit() {
-    setName(entry.name);
-    setServing(entry.servingDescription ?? "");
-    setCarbs(parseFloat(entry.netCarbsG).toFixed(1));
+    setDraftServings(initialServings);
     setEditing(true);
   }
 
-  function cancel() {
-    setEditing(false);
-  }
-
   async function save() {
+    if (draftServings === initialServings) {
+      setEditing(false);
+      return;
+    }
     setSaving(true);
     try {
       const res = await fetch(`/api/foods/${entry.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: name.trim() || entry.name,
-          servingDescription: serving.trim() || null,
-          netCarbsG: parseFloat(carbs) || 0,
-        }),
+        body: JSON.stringify({ servings: draftServings }),
       });
       if (res.ok) {
         setEditing(false);
@@ -314,7 +317,9 @@ function TodayFoodRow({
         >
           <div className="font-medium truncate">{entry.name}</div>
           <div className="text-xs text-muted">
-            {entry.servingDescription ? `${entry.servingDescription} · ` : ""}
+            {entry.servingDescription
+              ? `${formatServings(initialServings)} × ${entry.servingDescription} · `
+              : ""}
             {new Date(entry.eatenAt).toLocaleTimeString(undefined, {
               hour: "numeric",
               minute: "2-digit",
@@ -344,36 +349,28 @@ function TodayFoodRow({
   }
 
   return (
-    <li className="px-4 py-3 space-y-2 bg-background/50">
-      <input
-        autoFocus
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-        className="w-full bg-transparent font-medium focus:outline-none border-b border-border pb-1"
-      />
-      <input
-        value={serving}
-        onChange={(e) => setServing(e.target.value)}
-        placeholder="serving (optional)"
-        className="w-full bg-transparent text-sm text-muted focus:outline-none border-b border-border pb-1"
-      />
-      <div className="flex items-center justify-between pt-1">
-        <span className="text-xs text-muted">Net carbs</span>
-        <div className="flex items-center gap-1">
-          <input
-            type="number"
-            inputMode="decimal"
-            step="0.1"
-            value={carbs}
-            onChange={(e) => setCarbs(e.target.value)}
-            className="w-20 text-right bg-transparent tabular-nums font-semibold focus:outline-none border-b border-border pb-0.5"
-          />
-          <span className="text-sm text-muted">g</span>
-        </div>
+    <li className="px-4 py-3 space-y-3 bg-background/50">
+      <div className="font-medium truncate">{entry.name}</div>
+      <div className="flex items-center gap-3">
+        <ServingsStepper
+          value={draftServings}
+          onChange={setDraftServings}
+        />
+        <span className="text-sm text-muted">×</span>
+        <span className="text-sm text-muted truncate flex-1">
+          {entry.servingDescription || "serving"}
+        </span>
       </div>
-      <div className="flex gap-2 pt-2">
+      <div className="flex items-center justify-between">
+        <span className="text-xs text-muted">Net carbs</span>
+        <span className="text-sm font-semibold tabular-nums">
+          {draftTotal.toFixed(1)}
+          <span className="text-xs text-muted font-normal ml-0.5">g</span>
+        </span>
+      </div>
+      <div className="flex gap-2">
         <button
-          onClick={cancel}
+          onClick={() => setEditing(false)}
           disabled={saving}
           className="flex-1 px-3 py-2 rounded-lg border border-border text-sm flex items-center justify-center gap-1.5"
         >
@@ -389,6 +386,11 @@ function TodayFoodRow({
       </div>
     </li>
   );
+}
+
+function formatServings(n: number): string {
+  if (Number.isInteger(n)) return String(n);
+  return n.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
 }
 
 function WeightTrend({

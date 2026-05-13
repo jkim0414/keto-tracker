@@ -11,6 +11,7 @@ export async function GET() {
     .select({
       name: foodEntries.name,
       netCarbsG: foodEntries.netCarbsG,
+      netCarbsPerServingG: foodEntries.netCarbsPerServingG,
       servingDescription: foodEntries.servingDescription,
       source: foodEntries.source,
       eatenAt: foodEntries.eatenAt,

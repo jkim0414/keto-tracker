@@ -32,6 +32,7 @@ type OFFFood = {
 type RecentEntry = {
   name: string;
   netCarbsG: string;
+  netCarbsPerServingG: string | null;
   servingDescription: string | null;
   source: string;
 };
@@ -92,11 +93,14 @@ export default function LogPage() {
   }
 
   function addFromRecent(r: RecentEntry) {
-    const carbs = parseFloat(r.netCarbsG) || 0;
+    // Prefer the stored per-serving value (set on all new logs). Fall back to
+    // total for any legacy row where backfill hadn't run.
+    const perServing =
+      parseFloat(r.netCarbsPerServingG ?? r.netCarbsG) || 0;
     addItem({
       name: r.name,
       servings: 1,
-      netCarbsPerServingG: carbs,
+      netCarbsPerServingG: perServing,
       servingDescription: cleanServingDescription(r.servingDescription),
       source: "recent",
     });
@@ -108,21 +112,16 @@ export default function LogPage() {
     try {
       const localDate = localDateString();
       for (const item of pending) {
-        const total = itemTotalCarbs(item);
-        const desc =
-          item.servings && item.servings !== 1 && item.servingDescription
-            ? `${item.servings} × ${item.servingDescription}`
-            : item.servingDescription;
         await fetch("/api/foods", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             name: item.name,
-            netCarbsG: Math.round(total * 10) / 10,
-            servingDescription: desc,
-            servingGrams: item.servingGrams
-              ? item.servingGrams * (item.servings || 1)
-              : undefined,
+            servings: item.servings || 1,
+            netCarbsPerServingG:
+              Math.round((item.netCarbsPerServingG || 0) * 100) / 100,
+            servingDescription: item.servingDescription,
+            servingGrams: item.servingGrams,
             source: item.source === "recent" ? "search" : item.source,
             rawInput: item.rawInput,
             barcode: item.barcode,

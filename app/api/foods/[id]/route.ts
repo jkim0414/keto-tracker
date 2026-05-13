@@ -19,10 +19,11 @@ export async function DELETE(
   return NextResponse.json({ ok: true });
 }
 
+// Only servings is editable. Per-serving carbs, name, and serving description
+// are immutable properties of the logged food — they describe what was eaten.
+// Changing servings rescales the total net carbs.
 const patchSchema = z.object({
-  name: z.string().min(1).max(200).optional(),
-  netCarbsG: z.number().min(0).max(1000).optional(),
-  servingDescription: z.string().max(200).nullable().optional(),
+  servings: z.number().positive().max(1000),
 });
 
 export async function PATCH(
@@ -39,18 +40,24 @@ export async function PATCH(
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.issues }, { status: 400 });
   }
-  const update: Record<string, unknown> = {};
-  if (parsed.data.name !== undefined) update.name = parsed.data.name;
-  if (parsed.data.netCarbsG !== undefined)
-    update.netCarbsG = parsed.data.netCarbsG.toString();
-  if (parsed.data.servingDescription !== undefined)
-    update.servingDescription = parsed.data.servingDescription;
-  if (Object.keys(update).length === 0) {
-    return NextResponse.json({ error: "No fields to update" }, { status: 400 });
+  const [existing] = await db
+    .select()
+    .from(foodEntries)
+    .where(eq(foodEntries.id, numId))
+    .limit(1);
+  if (!existing) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
+  const perServing = parseFloat(
+    existing.netCarbsPerServingG ?? existing.netCarbsG
+  );
+  const totalG = Math.round(parsed.data.servings * perServing * 10) / 10;
   const [entry] = await db
     .update(foodEntries)
-    .set(update)
+    .set({
+      servings: parsed.data.servings.toString(),
+      netCarbsG: totalG.toString(),
+    })
     .where(eq(foodEntries.id, numId))
     .returning();
   return NextResponse.json({ entry });
