@@ -17,6 +17,7 @@ import PendingItemsList, {
 } from "@/components/PendingItemsList";
 import BarcodeScanner from "@/components/BarcodeScanner";
 import { cleanServingDescription } from "@/lib/serving";
+import { localDateString } from "@/lib/date";
 
 type OFFFood = {
   name: string;
@@ -105,6 +106,7 @@ export default function LogPage() {
     if (pending.length === 0) return;
     setSubmitting(true);
     try {
+      const localDate = localDateString();
       for (const item of pending) {
         const total = itemTotalCarbs(item);
         const desc =
@@ -124,6 +126,7 @@ export default function LogPage() {
             source: item.source === "recent" ? "search" : item.source,
             rawInput: item.rawInput,
             barcode: item.barcode,
+            localDate,
           }),
         });
       }

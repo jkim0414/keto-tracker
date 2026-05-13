@@ -12,7 +12,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import CarbRing from "@/components/CarbRing";
-import { kgToLb } from "@/lib/date";
+import { kgToLb, localDateString } from "@/lib/date";
 import { bucketColor, carbBucket, KETOSIS_CEILING_G } from "@/lib/keto";
 
 type FoodEntry = {
@@ -48,7 +48,10 @@ export default function Home() {
 
   async function load() {
     setLoading(true);
-    const res = await fetch("/api/summary", { cache: "no-store" });
+    const today = localDateString();
+    const res = await fetch(`/api/summary?date=${today}`, {
+      cache: "no-store",
+    });
     if (res.ok) setData(await res.json());
     setLoading(false);
   }

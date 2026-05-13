@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { foodEntries, settings, weightLogs } from "@/lib/db/schema";
 import { eq, gte, sql, desc } from "drizzle-orm";
@@ -6,13 +6,30 @@ import { localDateString } from "@/lib/date";
 
 export const runtime = "nodejs";
 
-export async function GET() {
-  const today = localDateString();
-  const sevenDaysAgo = new Date();
-  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-  const sevenDate = localDateString(sevenDaysAgo);
+function isValidDate(s: string | null): s is string {
+  return !!s && /^\d{4}-\d{2}-\d{2}$/.test(s);
+}
 
-  const [settingsRow] = await db.select().from(settings).where(eq(settings.id, 1)).limit(1);
+export async function GET(req: NextRequest) {
+  const { searchParams } = new URL(req.url);
+  // Prefer client-supplied "today" (computed in the user's timezone). The
+  // server's UTC clock can be hours ahead of the user's local day.
+  const queryToday = searchParams.get("date");
+  const today = isValidDate(queryToday) ? queryToday : localDateString();
+
+  // 7-day window anchored to client's today.
+  const [y, m, d] = today.split("-").map(Number);
+  const todayUtc = new Date(Date.UTC(y, m - 1, d));
+  todayUtc.setUTCDate(todayUtc.getUTCDate() - 6);
+  const sevenDate = `${todayUtc.getUTCFullYear()}-${String(
+    todayUtc.getUTCMonth() + 1
+  ).padStart(2, "0")}-${String(todayUtc.getUTCDate()).padStart(2, "0")}`;
+
+  const [settingsRow] = await db
+    .select()
+    .from(settings)
+    .where(eq(settings.id, 1))
+    .limit(1);
   const goal = parseFloat(settingsRow?.dailyNetCarbGoal ?? "20");
   const weightUnit = settingsRow?.weightUnit ?? "lb";
 

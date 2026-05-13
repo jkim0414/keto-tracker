@@ -11,7 +11,7 @@ import {
   ResponsiveContainer,
   CartesianGrid,
 } from "recharts";
-import { kgToLb, lbToKg } from "@/lib/date";
+import { kgToLb, lbToKg, localDateString } from "@/lib/date";
 
 type WeightLog = {
   id: number;
@@ -60,7 +60,7 @@ export default function WeightPage() {
       const res = await fetch("/api/weight", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ weightKg }),
+        body: JSON.stringify({ weightKg, localDate: localDateString() }),
       });
       if (res.ok) {
         setValue("");

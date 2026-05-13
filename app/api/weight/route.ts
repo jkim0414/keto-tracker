@@ -20,6 +20,7 @@ const postSchema = z.object({
   weightKg: z.number().positive().max(1000),
   notes: z.string().max(500).optional(),
   loggedAt: z.string().datetime().optional(),
+  localDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
 });
 
 export async function POST(req: NextRequest) {
@@ -30,13 +31,14 @@ export async function POST(req: NextRequest) {
   }
   const data = parsed.data;
   const loggedAt = data.loggedAt ? new Date(data.loggedAt) : new Date();
+  const localDate = data.localDate ?? localDateString(loggedAt);
   const [log] = await db
     .insert(weightLogs)
     .values({
       weightKg: data.weightKg.toString(),
       notes: data.notes,
       loggedAt,
-      localDate: localDateString(loggedAt),
+      localDate,
     })
     .returning();
   return NextResponse.json({ log });

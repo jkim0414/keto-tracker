@@ -40,6 +40,7 @@ const postSchema = z.object({
   rawInput: z.string().max(2000).optional(),
   barcode: z.string().max(50).optional(),
   eatenAt: z.string().datetime().optional(),
+  localDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
 });
 
 export async function POST(req: NextRequest) {
@@ -50,6 +51,10 @@ export async function POST(req: NextRequest) {
   }
   const data = parsed.data;
   const eatenAt = data.eatenAt ? new Date(data.eatenAt) : new Date();
+  // Prefer client-supplied localDate (computed in the user's timezone).
+  // Server-side fallback is UTC-derived, which is wrong for non-UTC users —
+  // it only happens if the client didn't send one (legacy clients).
+  const localDate = data.localDate ?? localDateString(eatenAt);
   const [entry] = await db
     .insert(foodEntries)
     .values({
@@ -61,7 +66,7 @@ export async function POST(req: NextRequest) {
       rawInput: data.rawInput,
       barcode: data.barcode,
       eatenAt,
-      localDate: localDateString(eatenAt),
+      localDate,
     })
     .returning();
   return NextResponse.json({ entry });
