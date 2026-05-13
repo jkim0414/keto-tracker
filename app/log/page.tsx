@@ -190,39 +190,35 @@ function RecentsList({
   onAdd: (r: RecentEntry) => void;
 }) {
   return (
-    <section className="mb-4">
-      <div className="flex items-center gap-1.5 mb-2 px-1 text-xs text-muted uppercase tracking-wide">
+    <section className="mb-4 -mx-4">
+      <div className="flex items-center gap-1.5 mb-2 px-5 text-xs text-muted uppercase tracking-wide">
         <Clock size={12} />
         Recent
       </div>
-      <ul className="bg-card border border-border rounded-2xl divide-y divide-border overflow-hidden">
+      <div
+        className="flex gap-2 overflow-x-auto px-4 pb-1 snap-x snap-mandatory"
+        style={{ scrollbarWidth: "thin" }}
+      >
         {items.map((r, i) => (
-          <li key={`${r.name}-${i}`}>
-            <button
-              onClick={() => onAdd(r)}
-              className="w-full px-4 py-2.5 flex items-center justify-between gap-3 text-left active:bg-border/40"
-            >
-              <div className="min-w-0">
-                <div className="font-medium truncate">{r.name}</div>
-                {r.servingDescription && (
-                  <div className="text-xs text-muted truncate">
-                    {r.servingDescription}
-                  </div>
-                )}
-              </div>
-              <div className="flex items-center gap-3 pl-2">
-                <span className="text-sm tabular-nums font-medium text-muted">
-                  {parseFloat(r.netCarbsG).toFixed(1)}
-                  <span className="text-xs ml-0.5">g</span>
-                </span>
-                <span className="w-7 h-7 rounded-full bg-accent text-accent-fg flex items-center justify-center">
-                  <Plus size={14} strokeWidth={2.5} />
-                </span>
-              </div>
-            </button>
-          </li>
+          <button
+            key={`${r.name}-${i}`}
+            onClick={() => onAdd(r)}
+            className="snap-start shrink-0 w-36 bg-card border border-border rounded-xl px-3 py-2.5 text-left active:bg-border/40 transition flex flex-col justify-between gap-2"
+          >
+            <div className="text-sm font-medium leading-tight line-clamp-2 min-h-[2.5rem]">
+              {r.name}
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs tabular-nums text-muted">
+                {parseFloat(r.netCarbsG).toFixed(1)}g
+              </span>
+              <span className="w-6 h-6 rounded-full bg-accent text-accent-fg flex items-center justify-center shrink-0">
+                <Plus size={12} strokeWidth={2.5} />
+              </span>
+            </div>
+          </button>
         ))}
-      </ul>
+      </div>
     </section>
   );
 }

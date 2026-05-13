@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Trash2 } from "lucide-react";
+import { Check, Trash2, X } from "lucide-react";
 import {
   LineChart,
   Line,
@@ -160,9 +160,9 @@ export default function Home() {
             </span>
           </div>
         </div>
-        <div className="relative flex items-end gap-2 h-28">
+        <div className="relative h-28">
           <div
-            className="absolute left-0 right-0 border-t border-dashed pointer-events-none"
+            className="absolute left-0 right-0 border-t border-dashed pointer-events-none z-20"
             style={{
               bottom: `${ceilingPct}%`,
               borderColor: "var(--color-danger)",
@@ -171,7 +171,7 @@ export default function Home() {
             title="50g — nutritional ketosis ceiling"
           />
           <div
-            className="absolute left-0 right-0 border-t border-dashed pointer-events-none"
+            className="absolute left-0 right-0 border-t border-dashed pointer-events-none z-20"
             style={{
               bottom: `${goalPct}%`,
               borderColor: "var(--color-accent)",
@@ -179,17 +179,20 @@ export default function Home() {
             }}
             title={`${data.goal}g — your daily goal`}
           />
-          {Array.from({ length: 7 }).map((_, i) => {
-            const d = new Date();
-            d.setDate(d.getDate() - (6 - i));
-            const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-            const found = data.dailyTotals.find((x) => x.localDate === iso);
-            const v = found?.netCarbsG ?? 0;
-            const h = weekMax > 0 ? (v / weekMax) * 100 : 0;
-            const bucket = carbBucket(v, data.goal);
-            return (
-              <div key={iso} className="flex-1 flex flex-col items-center gap-1 relative z-10">
-                <div className="flex-1 w-full flex items-end">
+          <div className="absolute inset-0 flex items-end gap-2">
+            {Array.from({ length: 7 }).map((_, i) => {
+              const d = new Date();
+              d.setDate(d.getDate() - (6 - i));
+              const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+              const found = data.dailyTotals.find((x) => x.localDate === iso);
+              const v = found?.netCarbsG ?? 0;
+              const h = weekMax > 0 ? (v / weekMax) * 100 : 0;
+              const bucket = carbBucket(v, data.goal);
+              return (
+                <div
+                  key={iso}
+                  className="flex-1 self-stretch flex flex-col justify-end"
+                >
                   <div
                     className="w-full rounded-t"
                     style={{
@@ -200,9 +203,20 @@ export default function Home() {
                     title={`${v.toFixed(1)}g net carbs`}
                   />
                 </div>
-                <div className="text-[10px] text-muted">
-                  {d.toLocaleDateString(undefined, { weekday: "narrow" })}
-                </div>
+              );
+            })}
+          </div>
+        </div>
+        <div className="flex gap-2 mt-1.5">
+          {Array.from({ length: 7 }).map((_, i) => {
+            const d = new Date();
+            d.setDate(d.getDate() - (6 - i));
+            return (
+              <div
+                key={i}
+                className="flex-1 text-center text-[10px] text-muted"
+              >
+                {d.toLocaleDateString(undefined, { weekday: "narrow" })}
               </div>
             );
           })}
@@ -230,45 +244,150 @@ export default function Home() {
         ) : (
           <ul className="bg-card border border-border rounded-2xl divide-y divide-border overflow-hidden">
             {data.todayEntries.map((e) => (
-              <li
+              <TodayFoodRow
                 key={e.id}
-                className="flex items-center justify-between px-4 py-3"
-              >
-                <div className="min-w-0">
-                  <div className="font-medium truncate">{e.name}</div>
-                  <div className="text-xs text-muted">
-                    {e.servingDescription
-                      ? `${e.servingDescription} · `
-                      : ""}
-                    {new Date(e.eatenAt).toLocaleTimeString(undefined, {
-                      hour: "numeric",
-                      minute: "2-digit",
-                    })}
-                  </div>
-                </div>
-                <div className="flex items-center gap-3 pl-3">
-                  <div className="text-right">
-                    <div className="font-semibold tabular-nums">
-                      {parseFloat(e.netCarbsG).toFixed(1)}
-                      <span className="text-xs text-muted font-normal ml-0.5">
-                        g
-                      </span>
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => deleteEntry(e.id)}
-                    className="text-muted hover:text-danger p-1"
-                    aria-label="Delete"
-                  >
-                    <Trash2 size={16} />
-                  </button>
-                </div>
-              </li>
+                entry={e}
+                onChanged={load}
+                onDelete={() => deleteEntry(e.id)}
+              />
             ))}
           </ul>
         )}
       </section>
     </div>
+  );
+}
+
+function TodayFoodRow({
+  entry,
+  onChanged,
+  onDelete,
+}: {
+  entry: FoodEntry;
+  onChanged: () => void;
+  onDelete: () => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [name, setName] = useState(entry.name);
+  const [serving, setServing] = useState(entry.servingDescription ?? "");
+  const [carbs, setCarbs] = useState(parseFloat(entry.netCarbsG).toFixed(1));
+  const [saving, setSaving] = useState(false);
+
+  function startEdit() {
+    setName(entry.name);
+    setServing(entry.servingDescription ?? "");
+    setCarbs(parseFloat(entry.netCarbsG).toFixed(1));
+    setEditing(true);
+  }
+
+  function cancel() {
+    setEditing(false);
+  }
+
+  async function save() {
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/foods/${entry.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: name.trim() || entry.name,
+          servingDescription: serving.trim() || null,
+          netCarbsG: parseFloat(carbs) || 0,
+        }),
+      });
+      if (res.ok) {
+        setEditing(false);
+        onChanged();
+      }
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (!editing) {
+    return (
+      <li className="flex items-center justify-between px-4 py-3">
+        <button
+          onClick={startEdit}
+          className="flex-1 min-w-0 text-left active:opacity-60 transition pr-3"
+        >
+          <div className="font-medium truncate">{entry.name}</div>
+          <div className="text-xs text-muted">
+            {entry.servingDescription ? `${entry.servingDescription} · ` : ""}
+            {new Date(entry.eatenAt).toLocaleTimeString(undefined, {
+              hour: "numeric",
+              minute: "2-digit",
+            })}
+          </div>
+        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={startEdit}
+            className="text-right active:opacity-60 transition"
+          >
+            <div className="font-semibold tabular-nums">
+              {parseFloat(entry.netCarbsG).toFixed(1)}
+              <span className="text-xs text-muted font-normal ml-0.5">g</span>
+            </div>
+          </button>
+          <button
+            onClick={onDelete}
+            className="text-muted hover:text-danger p-1"
+            aria-label="Delete"
+          >
+            <Trash2 size={16} />
+          </button>
+        </div>
+      </li>
+    );
+  }
+
+  return (
+    <li className="px-4 py-3 space-y-2 bg-background/50">
+      <input
+        autoFocus
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        className="w-full bg-transparent font-medium focus:outline-none border-b border-border pb-1"
+      />
+      <input
+        value={serving}
+        onChange={(e) => setServing(e.target.value)}
+        placeholder="serving (optional)"
+        className="w-full bg-transparent text-sm text-muted focus:outline-none border-b border-border pb-1"
+      />
+      <div className="flex items-center justify-between pt-1">
+        <span className="text-xs text-muted">Net carbs</span>
+        <div className="flex items-center gap-1">
+          <input
+            type="number"
+            inputMode="decimal"
+            step="0.1"
+            value={carbs}
+            onChange={(e) => setCarbs(e.target.value)}
+            className="w-20 text-right bg-transparent tabular-nums font-semibold focus:outline-none border-b border-border pb-0.5"
+          />
+          <span className="text-sm text-muted">g</span>
+        </div>
+      </div>
+      <div className="flex gap-2 pt-2">
+        <button
+          onClick={cancel}
+          disabled={saving}
+          className="flex-1 px-3 py-2 rounded-lg border border-border text-sm flex items-center justify-center gap-1.5"
+        >
+          <X size={14} /> Cancel
+        </button>
+        <button
+          onClick={save}
+          disabled={saving}
+          className="flex-1 px-3 py-2 rounded-lg bg-accent text-accent-fg text-sm font-medium flex items-center justify-center gap-1.5"
+        >
+          <Check size={14} /> {saving ? "Saving…" : "Save"}
+        </button>
+      </div>
+    </li>
   );
 }
 

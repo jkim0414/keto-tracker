@@ -17,7 +17,7 @@ export async function GET() {
     })
     .from(foodEntries)
     .orderBy(desc(foodEntries.eatenAt))
-    .limit(80);
+    .limit(200);
 
   const seen = new Set<string>();
   const dedup: typeof recent = [];
@@ -29,7 +29,7 @@ export async function GET() {
       ...r,
       servingDescription: cleanServingDescription(r.servingDescription) ?? null,
     });
-    if (dedup.length >= 6) break;
+    if (dedup.length >= 20) break;
   }
 
   return NextResponse.json({ recent: dedup });
