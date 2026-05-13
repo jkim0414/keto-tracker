@@ -1,4 +1,4 @@
-import { bucketColor, carbBucket, KETOSIS_CEILING_G } from "@/lib/keto";
+import { bucketColor, carbBucket } from "@/lib/keto";
 
 type Props = {
   consumed: number;
@@ -10,8 +10,9 @@ export default function CarbRing({ consumed, goal, size = 180 }: Props) {
   const stroke = 14;
   const radius = (size - stroke) / 2;
   const circumference = 2 * Math.PI * radius;
-  const scaleMax = Math.max(goal, KETOSIS_CEILING_G);
-  const ratio = scaleMax > 0 ? Math.min(consumed / scaleMax, 1) : 0;
+  // Scale to the goal: 100% = goal reached. Color shifts to yellow/red
+  // once you've gone over (see lib/keto.ts buckets).
+  const ratio = goal > 0 ? Math.min(consumed / goal, 1) : 0;
   const dash = circumference * ratio;
   const remaining = Math.max(goal - consumed, 0);
   const over = consumed > goal;
