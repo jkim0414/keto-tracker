@@ -61,25 +61,39 @@ function toFood(p: OFFProduct): OFFFood | null {
 
 export async function searchFoods(query: string, limit = 12): Promise<OFFFood[]> {
   if (!query.trim()) return [];
-  const url = new URL("https://world.openfoodfacts.org/cgi/search.pl");
+  // Use the US subdomain + popularity sort + English language to avoid the
+  // French-heavy default ranking of world.openfoodfacts.org. Also filter to
+  // products that have actually been scanned (anti-junk filter).
+  const url = new URL("https://us.openfoodfacts.org/cgi/search.pl");
   url.searchParams.set("search_terms", query);
   url.searchParams.set("search_simple", "1");
   url.searchParams.set("action", "process");
   url.searchParams.set("json", "1");
   url.searchParams.set("page_size", String(limit));
+  url.searchParams.set("lc", "en");
+  url.searchParams.set("sort_by", "unique_scans_n");
   url.searchParams.set(
     "fields",
     "product_name,brands,code,serving_size,serving_quantity,image_front_small_url,nutriments"
   );
 
-  const res = await fetch(url, {
-    headers: { "User-Agent": "keto-tracker/0.1 (personal)" },
-    next: { revalidate: 60 },
-  });
-  if (!res.ok) return [];
-  const data = (await res.json()) as { products?: OFFProduct[] };
-  const products = data.products || [];
-  return products.map(toFood).filter((x): x is OFFFood => x !== null);
+  try {
+    const res = await fetch(url, {
+      headers: { "User-Agent": "keto-tracker/0.1 (personal)" },
+      next: { revalidate: 60 },
+    });
+    if (!res.ok) return [];
+    const data = (await res.json()) as { products?: OFFProduct[] };
+    const products = data.products || [];
+    return products
+      .map(toFood)
+      .filter((x): x is OFFFood => x !== null)
+      // Prefer products with a brand and proper English-letter names. Drops
+      // a lot of the European-locale entries that leak through.
+      .filter((p) => /[A-Za-z]/.test(p.name) && p.name !== "Unknown");
+  } catch {
+    return [];
+  }
 }
 
 export async function lookupBarcode(barcode: string): Promise<OFFFood | null> {

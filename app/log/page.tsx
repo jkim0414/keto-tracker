@@ -10,6 +10,7 @@ import {
   Loader2,
   Plus,
   Clock,
+  Image as ImageIcon,
 } from "lucide-react";
 import PendingItemsList, {
   PendingItem,
@@ -553,7 +554,8 @@ function PhotoTab({ onAdd }: { onAdd: (items: PendingItem[]) => void }) {
   const [caption, setCaption] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const fileRef = useRef<HTMLInputElement | null>(null);
+  const cameraRef = useRef<HTMLInputElement | null>(null);
+  const libraryRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     return () => {
@@ -597,14 +599,15 @@ function PhotoTab({ onAdd }: { onAdd: (items: PendingItem[]) => void }) {
       const items: PendingItem[] = (data.items || []).map(
         (it: {
           name: string;
-          netCarbsG: number;
-          servingDescription?: string;
+          servings: number;
+          netCarbsPerServingG: number;
+          servingDescription: string;
           confidence: "high" | "medium" | "low";
           notes?: string;
         }) => ({
           name: it.name,
-          servings: 1,
-          netCarbsPerServingG: it.netCarbsG,
+          servings: it.servings || 1,
+          netCarbsPerServingG: it.netCarbsPerServingG,
           servingDescription: cleanServingDescription(it.servingDescription),
           source: "photo",
           confidence: it.confidence,
@@ -625,10 +628,21 @@ function PhotoTab({ onAdd }: { onAdd: (items: PendingItem[]) => void }) {
   return (
     <div className="bg-card border border-border rounded-2xl p-4 space-y-3">
       <input
-        ref={fileRef}
+        ref={cameraRef}
         type="file"
         accept="image/*"
         capture="environment"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) pickFile(f);
+          e.target.value = "";
+        }}
+      />
+      <input
+        ref={libraryRef}
+        type="file"
+        accept="image/*"
         className="hidden"
         onChange={(e) => {
           const f = e.target.files?.[0];
@@ -640,15 +654,23 @@ function PhotoTab({ onAdd }: { onAdd: (items: PendingItem[]) => void }) {
       {!file ? (
         <>
           <p className="text-sm text-muted">
-            Snap a photo of your plate or a label. After selecting, you can
-            add details before analyzing.
+            Take a photo or pick one from your library. AI estimates net
+            carbs — review before logging.
           </p>
-          <button
-            onClick={() => fileRef.current?.click()}
-            className="w-full bg-accent text-accent-fg font-medium py-3 rounded-xl active:scale-[0.98] transition flex items-center justify-center gap-2"
-          >
-            <Camera size={18} /> Take or choose photo
-          </button>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              onClick={() => cameraRef.current?.click()}
+              className="bg-accent text-accent-fg font-medium py-3 rounded-xl active:scale-[0.98] transition flex items-center justify-center gap-2"
+            >
+              <Camera size={18} /> Take photo
+            </button>
+            <button
+              onClick={() => libraryRef.current?.click()}
+              className="bg-card border border-border font-medium py-3 rounded-xl active:scale-[0.98] active:bg-border/40 transition flex items-center justify-center gap-2"
+            >
+              <ImageIcon size={18} /> Library
+            </button>
+          </div>
         </>
       ) : (
         <>
@@ -669,11 +691,20 @@ function PhotoTab({ onAdd }: { onAdd: (items: PendingItem[]) => void }) {
           />
           <div className="flex gap-2">
             <button
-              onClick={() => fileRef.current?.click()}
+              onClick={() => cameraRef.current?.click()}
               disabled={loading}
-              className="px-4 py-2.5 rounded-xl border border-border text-sm font-medium disabled:opacity-60"
+              className="px-3 py-2.5 rounded-xl border border-border text-sm font-medium disabled:opacity-60 flex items-center gap-1.5"
+              aria-label="Take a new photo"
             >
-              Retake
+              <Camera size={14} /> Retake
+            </button>
+            <button
+              onClick={() => libraryRef.current?.click()}
+              disabled={loading}
+              className="px-3 py-2.5 rounded-xl border border-border text-sm font-medium disabled:opacity-60 flex items-center gap-1.5"
+              aria-label="Pick from library"
+            >
+              <ImageIcon size={14} /> Library
             </button>
             <button
               onClick={reset}
@@ -729,14 +760,15 @@ function TextTab({ onAdd }: { onAdd: (items: PendingItem[]) => void }) {
       const items: PendingItem[] = (data.items || []).map(
         (it: {
           name: string;
-          netCarbsG: number;
-          servingDescription?: string;
+          servings: number;
+          netCarbsPerServingG: number;
+          servingDescription: string;
           confidence: "high" | "medium" | "low";
           notes?: string;
         }) => ({
           name: it.name,
-          servings: 1,
-          netCarbsPerServingG: it.netCarbsG,
+          servings: it.servings || 1,
+          netCarbsPerServingG: it.netCarbsPerServingG,
           servingDescription: cleanServingDescription(it.servingDescription),
           source: "text",
           rawInput: text,

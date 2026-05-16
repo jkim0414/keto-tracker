@@ -8,33 +8,47 @@ export function getAnthropicClient(): Anthropic | null {
 
 export type ParsedFoodItem = {
   name: string;
-  netCarbsG: number;
-  servingDescription?: string;
+  servings: number;
+  netCarbsPerServingG: number;
+  servingDescription: string;
   confidence: "high" | "medium" | "low";
   notes?: string;
 };
 
 const SYSTEM_PROMPT = `You are a nutrition assistant specializing in ketogenic diet tracking.
-Given a user's description of what they ate (text or image), identify each distinct food item and estimate the NET CARBS in grams for each.
+Given a user's description of what they ate (text or image), identify each distinct food item and estimate the NET CARBS.
 
-NET CARBS calculation (this is critical for keto):
+CRITICAL FORMATTING RULE — output one ATOMIC SERVING per item, with a separate quantity count:
+  - "servings" = the integer (or fractional) count of how many of that atomic unit were eaten
+  - "servingDescription" = describes ONE atomic unit, written with a leading "1 " (e.g. "1 sausage", "1 large egg", "1 cup", "1 tbsp", "1 slice (30 g)")
+  - "netCarbsPerServingG" = net carbs in a single atomic unit
+
+Examples:
+  - Photo shows two sausages → { servings: 2, servingDescription: "1 sausage", netCarbsPerServingG: 1.0 }
+    NOT { servings: 1, servingDescription: "2 sausages", netCarbsPerServingG: 2.0 }
+  - "three eggs scrambled" → { servings: 3, servingDescription: "1 large egg", netCarbsPerServingG: 0.4 }
+  - "a tablespoon of butter" → { servings: 1, servingDescription: "1 tbsp", netCarbsPerServingG: 0 }
+  - "half an avocado" → { servings: 0.5, servingDescription: "1 medium avocado", netCarbsPerServingG: 3.6 }
+  - "1 cup spinach" → { servings: 1, servingDescription: "1 cup", netCarbsPerServingG: 0.4 }
+
+NET CARBS calculation (critical for keto):
   net carbs = total carbohydrates
             − dietary fiber
             − erythritol (subtract 100%, not metabolized)
-            − allulose (subtract 100%, not metabolized; technically a rare sugar, not a polyol, but treated the same)
-            − other sugar alcohols (xylitol, sorbitol, maltitol, isomalt, glycerin: subtract 100% per standard keto convention)
+            − allulose (subtract 100%, not metabolized)
+            − other sugar alcohols (xylitol, sorbitol, maltitol, isomalt, glycerin: subtract 100%)
 
-Many low-carb / keto-marketed products (Halo Top, Quest bars, Lily's chocolate, ChocZero, keto ice cream) contain large amounts of erythritol or allulose. ALWAYS account for these — if a product's label says "22g carbs, 8g fiber, 12g erythritol" the net carbs are 2g, not 14g or 22g. If you cannot see the label and only know the brand, use your knowledge of typical formulations.
+Many low-carb / keto products (Halo Top, Quest bars, Lily's chocolate, ChocZero, keto ice cream)
+contain large amounts of erythritol or allulose. If a label says "22g carbs, 8g fiber, 12g erythritol",
+net carbs are 2g, not 14g or 22g. If you only know the brand, use typical formulations.
 
 Rules:
 - Return ONE entry per distinct food item (don't lump unrelated foods together).
-- If quantity is given, scale accordingly. If not, assume a typical single serving.
-- Whole, unprocessed proteins (eggs, plain meat, fish) and pure fats (butter, olive oil) have ~0g net carbs — use 0.
-- Non-starchy vegetables: low net carbs (e.g., 1 cup spinach ~0.4g, 1 cup broccoli ~3.6g).
-- Be honest about uncertainty via the confidence field.
-- Use "high" confidence only for clearly identifiable, standard items with stated quantity.
-- Use "low" when portion size is ambiguous or the item is hard to identify.
-- In the notes field, briefly flag if a value depends on sugar-alcohol assumptions the user might dispute.
+- Whole, unprocessed proteins (eggs, plain meat, fish) and pure fats (butter, olive oil) have ~0g.
+- Non-starchy vegetables are low (1 cup spinach ~0.4g, 1 cup broccoli ~3.6g).
+- "high" confidence only for clearly identifiable, standard items with stated quantity.
+- "low" when portion size is ambiguous or the item is hard to identify.
+- In notes, flag any sugar-alcohol assumption the user might dispute.
 
 Return ONLY a JSON object matching the schema. No prose, no markdown fences.`;
 
@@ -46,13 +60,33 @@ const FOOD_SCHEMA = {
       items: {
         type: "object",
         properties: {
-          name: { type: "string", description: "Concise food name with quantity if known" },
-          netCarbsG: { type: "number", description: "Estimated net carbs in grams" },
-          servingDescription: { type: "string", description: "e.g. '2 large eggs', '1 cup'" },
+          name: {
+            type: "string",
+            description: "Concise food name without quantity (e.g. 'Sausage', 'Avocado')",
+          },
+          servings: {
+            type: "number",
+            description: "How many atomic servings were eaten. Use decimals for partial (0.5).",
+          },
+          servingDescription: {
+            type: "string",
+            description:
+              "Describes ONE atomic serving with a leading '1' (e.g. '1 sausage', '1 large egg', '1 cup', '1 tbsp')",
+          },
+          netCarbsPerServingG: {
+            type: "number",
+            description: "Net carbs in ONE atomic serving, in grams",
+          },
           confidence: { type: "string", enum: ["high", "medium", "low"] },
           notes: { type: "string", description: "Optional caveat about the estimate" },
         },
-        required: ["name", "netCarbsG", "confidence"],
+        required: [
+          "name",
+          "servings",
+          "servingDescription",
+          "netCarbsPerServingG",
+          "confidence",
+        ],
       },
     },
   },
