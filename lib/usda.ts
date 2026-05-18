@@ -113,14 +113,25 @@ async function queryUSDA(
   return [];
 }
 
+function queryWords(query: string): string[] {
+  return query
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((w) => w.length > 1);
+}
+
+function matchScore(food: OFFFood, words: string[]): number {
+  if (words.length === 0) return 0;
+  const haystack = `${food.name} ${food.brand ?? ""}`.toLowerCase();
+  return words.reduce((s, w) => s + (haystack.includes(w) ? 1 : 0), 0);
+}
+
 export async function searchFoodsUSDA(
   query: string,
   limit = 10
 ): Promise<OFFFood[]> {
   if (!query.trim()) return [];
 
-  // Two parallel queries: whole foods get most of the budget, branded gets
-  // a smaller cap so it doesn't dominate when whole-food matches exist.
   const wholeBudget = Math.max(limit - 2, 4);
   const brandedBudget = Math.max(Math.floor(limit / 2), 3);
 
@@ -130,14 +141,32 @@ export async function searchFoodsUSDA(
   ]);
 
   const adapt = (foods: USDAFood[]) =>
-    foods
-      .map(toOFFFood)
-      .filter((x): x is OFFFood => x !== null);
+    foods.map(toOFFFood).filter((x): x is OFFFood => x !== null);
+
+  const wholeFoods = adapt(whole);
+  const brandedFoods = adapt(branded);
+
+  // For multi-word queries, prioritize results that contain ALL the words.
+  // This fixes cases like "halo top" matching "Topping, fruit" — the brand
+  // name should win over the partial-word stem match.
+  const words = queryWords(query);
+  const multiWord = words.length > 1;
+
+  function ranked(foods: OFFFood[]): OFFFood[] {
+    if (!multiWord) return foods;
+    const fullMatch: OFFFood[] = [];
+    const partial: OFFFood[] = [];
+    for (const f of foods) {
+      if (matchScore(f, words) === words.length) fullMatch.push(f);
+      else partial.push(f);
+    }
+    return [...fullMatch, ...partial];
+  }
 
   // Whole foods first; branded fills remaining slots. Dedupe by name+brand.
   const seen = new Set<string>();
   const merged: OFFFood[] = [];
-  for (const f of [...adapt(whole), ...adapt(branded)]) {
+  for (const f of [...ranked(wholeFoods), ...ranked(brandedFoods)]) {
     const key = `${f.name.toLowerCase()}|${f.brand?.toLowerCase() ?? ""}`;
     if (seen.has(key)) continue;
     seen.add(key);
