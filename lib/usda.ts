@@ -12,7 +12,12 @@ const API_KEY = process.env.USDA_FDC_API_KEY || "DEMO_KEY";
 //  - Survey:     FNDDS — prepared dishes (e.g. "Chicken, fried", "Pasta")
 //  - Branded:    branded product database (~600k items, noisy but covers
 //                packaged items USDA's whole-food sets don't)
-const DATA_TYPES = ["Foundation", "SR Legacy", "Survey (FNDDS)", "Branded"];
+//
+// USDA's API gets flaky when you combine all four in a single query (random
+// HTTP 400s). Splitting into two parallel queries avoids that and gives us
+// better control over ranking.
+const WHOLE_FOOD_TYPES = ["Foundation", "SR Legacy", "Survey (FNDDS)"];
+const BRANDED_TYPE = ["Branded"];
 
 type USDANutrient = {
   nutrientId: number;
@@ -74,49 +79,70 @@ function toOFFFood(f: USDAFood): OFFFood | null {
   };
 }
 
+async function queryUSDA(
+  query: string,
+  pageSize: number,
+  dataTypes: string[]
+): Promise<USDAFood[]> {
+  const url = new URL("https://api.nal.usda.gov/fdc/v1/foods/search");
+  url.searchParams.set("api_key", API_KEY);
+  url.searchParams.set("query", query);
+  url.searchParams.set("pageSize", String(pageSize));
+  // IMPORTANT: USDA's API rejects comma-separated dataType values with a 404.
+  // It expects multiple ?dataType= params instead.
+  for (const dt of dataTypes) {
+    url.searchParams.append("dataType", dt);
+  }
+
+  // Up to two retries on transient 4xx/5xx — USDA's load balancer is flaky.
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const res = await fetch(url, {
+        next: { revalidate: 300 },
+        signal: AbortSignal.timeout(6000),
+      });
+      if (res.ok) {
+        const data = (await res.json()) as { foods?: USDAFood[] };
+        return data.foods || [];
+      }
+    } catch {
+      // network / timeout — fall through to retry
+    }
+    if (attempt < 2) await new Promise((r) => setTimeout(r, 200));
+  }
+  return [];
+}
+
 export async function searchFoodsUSDA(
   query: string,
   limit = 10
 ): Promise<OFFFood[]> {
   if (!query.trim()) return [];
-  const url = new URL("https://api.nal.usda.gov/fdc/v1/foods/search");
-  url.searchParams.set("api_key", API_KEY);
-  url.searchParams.set("query", query);
-  // Over-fetch then re-rank, since Branded results would otherwise dominate.
-  url.searchParams.set("pageSize", String(limit * 4));
-  // IMPORTANT: USDA's API rejects comma-separated dataType values with a 404.
-  // It expects multiple ?dataType= params instead.
-  for (const dt of DATA_TYPES) {
-    url.searchParams.append("dataType", dt);
+
+  // Two parallel queries: whole foods get most of the budget, branded gets
+  // a smaller cap so it doesn't dominate when whole-food matches exist.
+  const wholeBudget = Math.max(limit - 2, 4);
+  const brandedBudget = Math.max(Math.floor(limit / 2), 3);
+
+  const [whole, branded] = await Promise.all([
+    queryUSDA(query, wholeBudget, WHOLE_FOOD_TYPES),
+    queryUSDA(query, brandedBudget, BRANDED_TYPE),
+  ]);
+
+  const adapt = (foods: USDAFood[]) =>
+    foods
+      .map(toOFFFood)
+      .filter((x): x is OFFFood => x !== null);
+
+  // Whole foods first; branded fills remaining slots. Dedupe by name+brand.
+  const seen = new Set<string>();
+  const merged: OFFFood[] = [];
+  for (const f of [...adapt(whole), ...adapt(branded)]) {
+    const key = `${f.name.toLowerCase()}|${f.brand?.toLowerCase() ?? ""}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push(f);
+    if (merged.length >= limit) break;
   }
-
-  try {
-    const res = await fetch(url, {
-      next: { revalidate: 300 },
-      signal: AbortSignal.timeout(6000),
-    });
-    if (!res.ok) return [];
-    const data = (await res.json()) as { foods?: USDAFood[] };
-    const foods = data.foods || [];
-
-    const adapted = foods
-      .map((f) => ({ raw: f, food: toOFFFood(f) }))
-      .filter((x): x is { raw: USDAFood; food: OFFFood } => x.food !== null);
-
-    // Rank: whole-food datasets first, then Survey, then Branded last.
-    const rank: Record<string, number> = {
-      Foundation: 0,
-      "SR Legacy": 1,
-      "Survey (FNDDS)": 2,
-      Branded: 3,
-    };
-    adapted.sort(
-      (a, b) =>
-        (rank[a.raw.dataType ?? ""] ?? 4) - (rank[b.raw.dataType ?? ""] ?? 4)
-    );
-
-    return adapted.slice(0, limit).map((x) => x.food);
-  } catch {
-    return [];
-  }
+  return merged;
 }
