@@ -79,10 +79,7 @@ export default function WeightPage() {
   const chartData = [...logs]
     .reverse()
     .map((l) => ({
-      date: new Date(l.loggedAt).toLocaleDateString(undefined, {
-        month: "short",
-        day: "numeric",
-      }),
+      ts: new Date(l.loggedAt).getTime(),
       weight:
         unit === "lb"
           ? Number(kgToLb(parseFloat(l.weightKg)).toFixed(1))
@@ -155,7 +152,15 @@ export default function WeightPage() {
                   stroke="var(--color-border)"
                 />
                 <XAxis
-                  dataKey="date"
+                  dataKey="ts"
+                  type="number"
+                  domain={["dataMin", "dataMax"]}
+                  tickFormatter={(ts) =>
+                    new Date(ts).toLocaleDateString(undefined, {
+                      month: "short",
+                      day: "numeric",
+                    })
+                  }
                   stroke="var(--color-muted)"
                   fontSize={11}
                   tickLine={false}
@@ -174,6 +179,13 @@ export default function WeightPage() {
                     borderRadius: "8px",
                     fontSize: "12px",
                   }}
+                  labelFormatter={(ts) =>
+                    new Date(ts as number).toLocaleDateString(undefined, {
+                      weekday: "short",
+                      month: "short",
+                      day: "numeric",
+                    })
+                  }
                 />
                 <Line
                   type="monotone"

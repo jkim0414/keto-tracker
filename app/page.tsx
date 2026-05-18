@@ -470,7 +470,12 @@ function WeightTrend({
               data={points}
               margin={{ top: 4, right: 8, left: 8, bottom: 0 }}
             >
-              <XAxis dataKey="label" hide />
+              <XAxis
+                dataKey="ts"
+                type="number"
+                domain={["dataMin", "dataMax"]}
+                hide
+              />
               <YAxis hide domain={["dataMin - 0.5", "dataMax + 0.5"]} />
               <Tooltip
                 contentStyle={{
@@ -480,6 +485,13 @@ function WeightTrend({
                   fontSize: "12px",
                 }}
                 formatter={(v) => [`${v} ${unit}`, "Weight"]}
+                labelFormatter={(ts) =>
+                  new Date(ts as number).toLocaleDateString(undefined, {
+                    weekday: "short",
+                    month: "short",
+                    day: "numeric",
+                  })
+                }
               />
               <Line
                 type="monotone"
