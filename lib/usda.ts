@@ -10,9 +10,9 @@ const API_KEY = process.env.USDA_FDC_API_KEY || "DEMO_KEY";
 //  - Foundation: USDA's recently re-analyzed, highest-quality entries (~200)
 //  - SR Legacy:  USDA's classic Standard Reference DB (~7k whole foods)
 //  - Survey:     FNDDS — prepared dishes (e.g. "Chicken, fried", "Pasta")
-// We skip "Branded" — 600k+ noisy crowd-sourced entries that are better
-// looked up via barcode in OpenFoodFacts.
-const DATA_TYPES = "Foundation,SR Legacy,Survey (FNDDS)";
+//  - Branded:    branded product database (~600k items, noisy but covers
+//                packaged items USDA's whole-food sets don't)
+const DATA_TYPES = ["Foundation", "SR Legacy", "Survey (FNDDS)", "Branded"];
 
 type USDANutrient = {
   nutrientId: number;
@@ -82,24 +82,40 @@ export async function searchFoodsUSDA(
   const url = new URL("https://api.nal.usda.gov/fdc/v1/foods/search");
   url.searchParams.set("api_key", API_KEY);
   url.searchParams.set("query", query);
-  url.searchParams.set("pageSize", String(limit));
-  url.searchParams.set("dataType", DATA_TYPES);
-  url.searchParams.set("sortBy", "dataType.keyword");
-  url.searchParams.set("sortOrder", "asc");
+  // Over-fetch then re-rank, since Branded results would otherwise dominate.
+  url.searchParams.set("pageSize", String(limit * 4));
+  // IMPORTANT: USDA's API rejects comma-separated dataType values with a 404.
+  // It expects multiple ?dataType= params instead.
+  for (const dt of DATA_TYPES) {
+    url.searchParams.append("dataType", dt);
+  }
 
   try {
     const res = await fetch(url, {
       next: { revalidate: 300 },
-      signal: AbortSignal.timeout(5000),
+      signal: AbortSignal.timeout(6000),
     });
     if (!res.ok) return [];
     const data = (await res.json()) as { foods?: USDAFood[] };
     const foods = data.foods || [];
-    return foods
-      .map(toOFFFood)
-      .filter((x): x is OFFFood => x !== null)
-      // Re-rank: prefer Foundation/SR Legacy results to Survey ones.
-      .slice(0, limit);
+
+    const adapted = foods
+      .map((f) => ({ raw: f, food: toOFFFood(f) }))
+      .filter((x): x is { raw: USDAFood; food: OFFFood } => x.food !== null);
+
+    // Rank: whole-food datasets first, then Survey, then Branded last.
+    const rank: Record<string, number> = {
+      Foundation: 0,
+      "SR Legacy": 1,
+      "Survey (FNDDS)": 2,
+      Branded: 3,
+    };
+    adapted.sort(
+      (a, b) =>
+        (rank[a.raw.dataType ?? ""] ?? 4) - (rank[b.raw.dataType ?? ""] ?? 4)
+    );
+
+    return adapted.slice(0, limit).map((x) => x.food);
   } catch {
     return [];
   }
