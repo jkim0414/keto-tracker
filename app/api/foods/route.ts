@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { foodEntries } from "@/lib/db/schema";
-import { searchFoods } from "@/lib/openfoodfacts";
+import { searchFoods, type OFFFood } from "@/lib/openfoodfacts";
+import { searchFoodsUSDA } from "@/lib/usda";
 import { cleanServingDescription } from "@/lib/serving";
 import { localDateString } from "@/lib/date";
 import { desc, eq, and, gte, lte, ilike } from "drizzle-orm";
@@ -15,9 +16,11 @@ export async function GET(req: NextRequest) {
   const date = searchParams.get("date");
 
   if (q) {
-    // Run both lookups in parallel. User's own foods (matched by name)
-    // are favored — they go first in the response. OFF results follow.
-    const [recentRaw, external] = await Promise.all([
+    // Three lookups in parallel:
+    //  - Your own foods (ILIKE name match on food_entries) — favored
+    //  - USDA FoodData Central — gold standard for generic foods
+    //  - OpenFoodFacts — good for branded/scanned products
+    const [recentRaw, usda, off] = await Promise.all([
       db
         .select({
           name: foodEntries.name,
@@ -31,7 +34,8 @@ export async function GET(req: NextRequest) {
         .where(ilike(foodEntries.name, `%${q}%`))
         .orderBy(desc(foodEntries.eatenAt))
         .limit(50),
-      searchFoods(q, 10),
+      searchFoodsUSDA(q, 6),
+      searchFoods(q, 4),
     ]);
 
     const seen = new Set<string>();
@@ -46,6 +50,16 @@ export async function GET(req: NextRequest) {
           cleanServingDescription(r.servingDescription) ?? null,
       });
       if (recent.length >= 8) break;
+    }
+
+    // Merge USDA + OFF, USDA first; dedupe by lowercased name.
+    const externalSeen = new Set<string>();
+    const external: OFFFood[] = [];
+    for (const f of [...usda, ...off]) {
+      const key = f.name.trim().toLowerCase();
+      if (externalSeen.has(key)) continue;
+      externalSeen.add(key);
+      external.push(f);
     }
 
     return NextResponse.json({ recent, external });

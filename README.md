@@ -33,7 +33,8 @@ If you raise your goal above 50g (lazy keto), yellow collapses — going over go
 - **Next.js 16** (App Router) + TypeScript + Tailwind v4
 - **Neon Postgres** via Drizzle ORM (HTTP driver for edge-friendly serverless queries)
 - **Anthropic SDK** (Claude Sonnet 4.6) for photo + text food parsing, with tool-use schemas for structured output
-- **OpenFoodFacts** free API for barcode lookup + search autocomplete
+- **USDA FoodData Central** (free, unlimited with a key) for generic-food autocomplete — Foundation + SR Legacy + Survey datasets
+- **OpenFoodFacts** for branded products + barcode lookup
 - **ZXing** for in-browser barcode scanning via the phone's rear camera
 - **Recharts** for the weight chart
 
@@ -53,6 +54,7 @@ Copy `.env.example` to `.env.local` and fill in:
 DATABASE_URL=postgres://...           # pooled, from Neon dashboard
 DATABASE_URL_UNPOOLED=postgres://...  # non-pooled, used for migrations
 ANTHROPIC_API_KEY=sk-ant-...
+USDA_FDC_API_KEY=...                  # free signup at fdc.nal.usda.gov/api-key-signup.html
 ```
 
 ### 3. Create the database tables
