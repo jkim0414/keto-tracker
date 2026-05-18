@@ -32,6 +32,7 @@ type USDAFood = {
   brandOwner?: string;
   brandName?: string;
   dataType?: string;
+  gtinUpc?: string;
   servingSize?: number;
   servingSizeUnit?: string;
   householdServingFullText?: string;
@@ -126,6 +127,27 @@ function matchScore(food: OFFFood, words: string[]): number {
   return words.reduce((s, w) => s + (haystack.includes(w) ? 1 : 0), 0);
 }
 
+/**
+ * Look up a product by GTIN/UPC barcode against USDA's Branded dataset.
+ * USDA exposes gtinUpc as a searchable field, so querying the barcode
+ * digits with dataType=Branded returns an exact match when available.
+ */
+export async function lookupBarcodeUSDA(
+  barcode: string
+): Promise<OFFFood | null> {
+  if (!/^\d{6,14}$/.test(barcode)) return null;
+  const foods = await queryUSDA(barcode, 3, BRANDED_TYPE);
+  // Require an exact GTIN match (substring or equality on either end of the
+  // raw gtinUpc field — some entries store as "00012345678905" with leading
+  // zeros, some without).
+  const hit = foods.find((f) => {
+    const g = (f.gtinUpc || "").replace(/^0+/, "");
+    const b = barcode.replace(/^0+/, "");
+    return g && (g === b || g.endsWith(b) || b.endsWith(g));
+  });
+  return hit ? toOFFFood(hit) : null;
+}
+
 export async function searchFoodsUSDA(
   query: string,
   limit = 10
@@ -143,34 +165,31 @@ export async function searchFoodsUSDA(
   const adapt = (foods: USDAFood[]) =>
     foods.map(toOFFFood).filter((x): x is OFFFood => x !== null);
 
-  const wholeFoods = adapt(whole);
-  const brandedFoods = adapt(branded);
-
-  // For multi-word queries, prioritize results that contain ALL the words.
-  // This fixes cases like "halo top" matching "Topping, fruit" — the brand
-  // name should win over the partial-word stem match.
   const words = queryWords(query);
-  const multiWord = words.length > 1;
 
-  function ranked(foods: OFFFood[]): OFFFood[] {
-    if (!multiWord) return foods;
-    const fullMatch: OFFFood[] = [];
-    const partial: OFFFood[] = [];
-    for (const f of foods) {
-      if (matchScore(f, words) === words.length) fullMatch.push(f);
-      else partial.push(f);
-    }
-    return [...fullMatch, ...partial];
-  }
+  // Score each result and rank ACROSS both datasets. Whole foods get a small
+  // tiebreaker boost (so generic "Blueberries, raw" beats a branded version
+  // when both fully match), but a fully-matching branded entry beats a
+  // partial-match whole-food entry. This is what fixes searches like
+  // "kirkland signature pistachios": the Branded entry matches all 3 words
+  // and outranks generic "Pistachio nuts" (1/3 words).
+  type Scored = { food: OFFFood; matchScore: number; tier: number };
+  const scored: Scored[] = [
+    ...adapt(whole).map((f) => ({ food: f, matchScore: matchScore(f, words), tier: 0 })),
+    ...adapt(branded).map((f) => ({ food: f, matchScore: matchScore(f, words), tier: 1 })),
+  ];
+  scored.sort((a, b) => {
+    if (b.matchScore !== a.matchScore) return b.matchScore - a.matchScore;
+    return a.tier - b.tier;
+  });
 
-  // Whole foods first; branded fills remaining slots. Dedupe by name+brand.
   const seen = new Set<string>();
   const merged: OFFFood[] = [];
-  for (const f of [...ranked(wholeFoods), ...ranked(brandedFoods)]) {
-    const key = `${f.name.toLowerCase()}|${f.brand?.toLowerCase() ?? ""}`;
+  for (const { food } of scored) {
+    const key = `${food.name.toLowerCase()}|${food.brand?.toLowerCase() ?? ""}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    merged.push(f);
+    merged.push(food);
     if (merged.length >= limit) break;
   }
   return merged;

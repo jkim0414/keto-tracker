@@ -166,7 +166,7 @@ export default function LogPage() {
       </div>
 
       {tab === "search" && <SearchTab onAdd={addItem} />}
-      {tab === "scan" && <ScanTab onAdd={addItem} />}
+      {tab === "scan" && <ScanTab onAdd={addItem} switchTab={setTab} />}
       {tab === "photo" && <PhotoTab onAdd={addItems} />}
       {tab === "text" && <TextTab onAdd={addItems} />}
 
@@ -567,21 +567,27 @@ function LabelField({
   );
 }
 
-function ScanTab({ onAdd }: { onAdd: (item: PendingItem) => void }) {
+function ScanTab({
+  onAdd,
+  switchTab,
+}: {
+  onAdd: (item: PendingItem) => void;
+  switchTab: (t: Tab) => void;
+}) {
   const [scanning, setScanning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [failedCode, setFailedCode] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   async function handleCode(code: string) {
     setScanning(false);
     setLoading(true);
     setError(null);
+    setFailedCode(null);
     try {
       const res = await fetch(`/api/foods/barcode/${code}`);
       if (res.status === 404) {
-        setError(
-          `No product found for barcode ${code}. Try searching or adding manually.`
-        );
+        setFailedCode(code);
         return;
       }
       if (!res.ok) {
@@ -593,6 +599,44 @@ function ScanTab({ onAdd }: { onAdd: (item: PendingItem) => void }) {
     } finally {
       setLoading(false);
     }
+  }
+
+  if (failedCode) {
+    return (
+      <div className="bg-card border border-border rounded-2xl p-6 text-center space-y-4">
+        <ScanLine size={36} className="mx-auto text-muted opacity-50" />
+        <div>
+          <p className="text-sm font-medium">Barcode not found</p>
+          <p className="text-xs text-muted mt-1 font-mono">{failedCode}</p>
+          <p className="text-xs text-muted mt-2 max-w-xs mx-auto">
+            Neither database has this product yet. Try one of these:
+          </p>
+        </div>
+        <div className="flex flex-col gap-2 max-w-xs mx-auto">
+          <button
+            onClick={() => switchTab("search")}
+            className="bg-accent text-accent-fg font-medium px-4 py-2.5 rounded-xl text-sm"
+          >
+            Search by name
+          </button>
+          <button
+            onClick={() => switchTab("photo")}
+            className="border border-border px-4 py-2.5 rounded-xl text-sm"
+          >
+            Photograph the label
+          </button>
+          <button
+            onClick={() => {
+              setFailedCode(null);
+              setScanning(true);
+            }}
+            className="text-muted text-sm py-2"
+          >
+            Try another scan
+          </button>
+        </div>
+      </div>
+    );
   }
 
   return (
