@@ -59,28 +59,31 @@ function toFood(p: OFFProduct): OFFFood | null {
   };
 }
 
-export async function searchFoods(query: string, limit = 12): Promise<OFFFood[]> {
+export async function searchFoods(query: string, limit = 10): Promise<OFFFood[]> {
   if (!query.trim()) return [];
-  // Use the US subdomain + popularity sort + English language to avoid the
-  // French-heavy default ranking of world.openfoodfacts.org. Also filter to
-  // products that have actually been scanned (anti-junk filter).
+  // OFF's world endpoint defaults to French-localized ranking. To bias to
+  // US/English: US subdomain + cc=us + lc=en + popularity sort. Also filter
+  // to products with English-letter names + a known carbs value.
   const url = new URL("https://us.openfoodfacts.org/cgi/search.pl");
   url.searchParams.set("search_terms", query);
   url.searchParams.set("search_simple", "1");
   url.searchParams.set("action", "process");
   url.searchParams.set("json", "1");
-  url.searchParams.set("page_size", String(limit));
+  url.searchParams.set("page_size", String(limit * 2));
+  url.searchParams.set("cc", "us");
   url.searchParams.set("lc", "en");
-  url.searchParams.set("sort_by", "unique_scans_n");
+  url.searchParams.set("sort_by", "popularity_key");
+  url.searchParams.set("countries_tags_en", "united-states");
   url.searchParams.set(
     "fields",
-    "product_name,brands,code,serving_size,serving_quantity,image_front_small_url,nutriments"
+    "product_name,brands,code,serving_size,serving_quantity,image_front_small_url,nutriments,countries_tags"
   );
 
   try {
     const res = await fetch(url, {
       headers: { "User-Agent": "keto-tracker/0.1 (personal)" },
       next: { revalidate: 60 },
+      signal: AbortSignal.timeout(5000),
     });
     if (!res.ok) return [];
     const data = (await res.json()) as { products?: OFFProduct[] };
@@ -88,9 +91,16 @@ export async function searchFoods(query: string, limit = 12): Promise<OFFFood[]>
     return products
       .map(toFood)
       .filter((x): x is OFFFood => x !== null)
-      // Prefer products with a brand and proper English-letter names. Drops
-      // a lot of the European-locale entries that leak through.
-      .filter((p) => /[A-Za-z]/.test(p.name) && p.name !== "Unknown");
+      // Filter junk: no name, or non-Latin character names.
+      .filter(
+        (p) =>
+          p.name !== "Unknown" &&
+          /^[A-Za-z0-9]/.test(p.name) &&
+          // At least half the characters should be ASCII letters/digits/punct.
+          (p.name.match(/[A-Za-z0-9 \-(),.'&%/]/g) || []).length >=
+            p.name.length * 0.7
+      )
+      .slice(0, limit);
   } catch {
     return [];
   }

@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { foodEntries } from "@/lib/db/schema";
 import { searchFoods } from "@/lib/openfoodfacts";
+import { cleanServingDescription } from "@/lib/serving";
 import { localDateString } from "@/lib/date";
-import { desc, eq, and, gte, lte } from "drizzle-orm";
+import { desc, eq, and, gte, lte, ilike } from "drizzle-orm";
 import { z } from "zod";
 
 export const runtime = "nodejs";
@@ -14,8 +15,40 @@ export async function GET(req: NextRequest) {
   const date = searchParams.get("date");
 
   if (q) {
-    const results = await searchFoods(q, 12);
-    return NextResponse.json({ results });
+    // Run both lookups in parallel. User's own foods (matched by name)
+    // are favored — they go first in the response. OFF results follow.
+    const [recentRaw, external] = await Promise.all([
+      db
+        .select({
+          name: foodEntries.name,
+          netCarbsG: foodEntries.netCarbsG,
+          netCarbsPerServingG: foodEntries.netCarbsPerServingG,
+          servingDescription: foodEntries.servingDescription,
+          source: foodEntries.source,
+          eatenAt: foodEntries.eatenAt,
+        })
+        .from(foodEntries)
+        .where(ilike(foodEntries.name, `%${q}%`))
+        .orderBy(desc(foodEntries.eatenAt))
+        .limit(50),
+      searchFoods(q, 10),
+    ]);
+
+    const seen = new Set<string>();
+    const recent: typeof recentRaw = [];
+    for (const r of recentRaw) {
+      const key = r.name.trim().toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      recent.push({
+        ...r,
+        servingDescription:
+          cleanServingDescription(r.servingDescription) ?? null,
+      });
+      if (recent.length >= 8) break;
+    }
+
+    return NextResponse.json({ recent, external });
   }
 
   const where = date

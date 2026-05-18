@@ -10,7 +10,6 @@ import {
   Loader2,
   Plus,
   Clock,
-  Image as ImageIcon,
 } from "lucide-react";
 import PendingItemsList, {
   PendingItem,
@@ -225,13 +224,19 @@ function RecentsList({
 
 function SearchTab({ onAdd }: { onAdd: (item: PendingItem) => void }) {
   const [query, setQuery] = useState("");
-  const [results, setResults] = useState<OFFFood[]>([]);
+  const [recent, setRecent] = useState<RecentEntry[]>([]);
+  const [external, setExternal] = useState<OFFFood[]>([]);
   const [loading, setLoading] = useState(false);
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
 
+  function clearResults() {
+    setRecent([]);
+    setExternal([]);
+  }
+
   useEffect(() => {
     if (!query.trim()) {
-      setResults([]);
+      clearResults();
       return;
     }
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -241,7 +246,8 @@ function SearchTab({ onAdd }: { onAdd: (item: PendingItem) => void }) {
         const res = await fetch(`/api/foods?q=${encodeURIComponent(query)}`);
         if (res.ok) {
           const data = await res.json();
-          setResults(data.results);
+          setRecent(data.recent || []);
+          setExternal(data.external || []);
         }
       } finally {
         setLoading(false);
@@ -251,6 +257,29 @@ function SearchTab({ onAdd }: { onAdd: (item: PendingItem) => void }) {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
   }, [query]);
+
+  function addRecent(r: RecentEntry) {
+    const perServing =
+      parseFloat(r.netCarbsPerServingG ?? r.netCarbsG) || 0;
+    onAdd({
+      name: r.name,
+      servings: 1,
+      netCarbsPerServingG: perServing,
+      servingDescription: cleanServingDescription(r.servingDescription),
+      source: "recent",
+    });
+    setQuery("");
+    clearResults();
+  }
+
+  function addExternal(f: OFFFood) {
+    onAdd(offToPending(f, "search"));
+    setQuery("");
+    clearResults();
+  }
+
+  const noResults =
+    query.trim() && !loading && recent.length === 0 && external.length === 0;
 
   return (
     <div>
@@ -276,35 +305,77 @@ function SearchTab({ onAdd }: { onAdd: (item: PendingItem) => void }) {
 
       <ManualEntry onAdd={onAdd} />
 
-      {results.length > 0 && (
-        <ul className="mt-3 bg-card border border-border rounded-2xl divide-y divide-border overflow-hidden">
-          {results.map((r, i) => (
-            <li key={`${r.barcode ?? i}`}>
-              <button
-                onClick={() => {
-                  onAdd(offToPending(r, "search"));
-                  setQuery("");
-                  setResults([]);
-                }}
-                className="w-full px-4 py-3 text-left active:bg-border/40 flex items-center justify-between gap-3"
-              >
-                <div className="min-w-0">
-                  <div className="font-medium truncate">{r.name}</div>
-                  <div className="text-xs text-muted truncate">
-                    {r.brand ? `${r.brand} · ` : ""}
-                    {r.netCarbsPer100g.toFixed(1)}g net carbs / 100g
-                    {r.servingDescription
-                      ? ` · ${r.servingDescription}`
-                      : ""}
+      {recent.length > 0 && (
+        <div className="mt-3">
+          <div className="px-1 pb-1.5 text-[10px] text-muted uppercase tracking-wide flex items-center gap-1.5">
+            <Clock size={11} />
+            Your foods
+          </div>
+          <ul className="bg-card border border-border rounded-2xl divide-y divide-border overflow-hidden">
+            {recent.map((r, i) => (
+              <li key={`r-${r.name}-${i}`}>
+                <button
+                  onClick={() => addRecent(r)}
+                  className="w-full px-4 py-3 text-left active:bg-border/40 flex items-center justify-between gap-3"
+                >
+                  <div className="min-w-0">
+                    <div className="font-medium truncate">{r.name}</div>
+                    <div className="text-xs text-muted truncate">
+                      {r.servingDescription
+                        ? `${r.servingDescription} · `
+                        : ""}
+                      {parseFloat(
+                        r.netCarbsPerServingG ?? r.netCarbsG
+                      ).toFixed(1)}
+                      g net carbs
+                    </div>
                   </div>
-                </div>
-                <span className="w-7 h-7 rounded-full bg-accent text-accent-fg flex items-center justify-center shrink-0">
-                  <Plus size={14} strokeWidth={2.5} />
-                </span>
-              </button>
-            </li>
-          ))}
-        </ul>
+                  <span className="w-7 h-7 rounded-full bg-accent text-accent-fg flex items-center justify-center shrink-0">
+                    <Plus size={14} strokeWidth={2.5} />
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {external.length > 0 && (
+        <div className="mt-3">
+          {recent.length > 0 && (
+            <div className="px-1 pb-1.5 text-[10px] text-muted uppercase tracking-wide">
+              Database
+            </div>
+          )}
+          <ul className="bg-card border border-border rounded-2xl divide-y divide-border overflow-hidden">
+            {external.map((r, i) => (
+              <li key={`e-${r.barcode ?? i}`}>
+                <button
+                  onClick={() => addExternal(r)}
+                  className="w-full px-4 py-3 text-left active:bg-border/40 flex items-center justify-between gap-3"
+                >
+                  <div className="min-w-0">
+                    <div className="font-medium truncate">{r.name}</div>
+                    <div className="text-xs text-muted truncate">
+                      {r.brand ? `${r.brand} · ` : ""}
+                      {r.netCarbsPer100g.toFixed(1)}g net carbs / 100g
+                      {r.servingDescription ? ` · ${r.servingDescription}` : ""}
+                    </div>
+                  </div>
+                  <span className="w-7 h-7 rounded-full bg-accent text-accent-fg flex items-center justify-center shrink-0">
+                    <Plus size={14} strokeWidth={2.5} />
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {noResults && (
+        <div className="mt-3 bg-card border border-border rounded-2xl p-4 text-center text-sm text-muted">
+          No matches. Try a different term, or add manually below.
+        </div>
       )}
     </div>
   );
@@ -554,8 +625,7 @@ function PhotoTab({ onAdd }: { onAdd: (items: PendingItem[]) => void }) {
   const [caption, setCaption] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const cameraRef = useRef<HTMLInputElement | null>(null);
-  const libraryRef = useRef<HTMLInputElement | null>(null);
+  const fileRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     return () => {
@@ -628,19 +698,7 @@ function PhotoTab({ onAdd }: { onAdd: (items: PendingItem[]) => void }) {
   return (
     <div className="bg-card border border-border rounded-2xl p-4 space-y-3">
       <input
-        ref={cameraRef}
-        type="file"
-        accept="image/*"
-        capture="environment"
-        className="hidden"
-        onChange={(e) => {
-          const f = e.target.files?.[0];
-          if (f) pickFile(f);
-          e.target.value = "";
-        }}
-      />
-      <input
-        ref={libraryRef}
+        ref={fileRef}
         type="file"
         accept="image/*"
         className="hidden"
@@ -657,20 +715,12 @@ function PhotoTab({ onAdd }: { onAdd: (items: PendingItem[]) => void }) {
             Take a photo or pick one from your library. AI estimates net
             carbs — review before logging.
           </p>
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              onClick={() => cameraRef.current?.click()}
-              className="bg-accent text-accent-fg font-medium py-3 rounded-xl active:scale-[0.98] transition flex items-center justify-center gap-2"
-            >
-              <Camera size={18} /> Take photo
-            </button>
-            <button
-              onClick={() => libraryRef.current?.click()}
-              className="bg-card border border-border font-medium py-3 rounded-xl active:scale-[0.98] active:bg-border/40 transition flex items-center justify-center gap-2"
-            >
-              <ImageIcon size={18} /> Library
-            </button>
-          </div>
+          <button
+            onClick={() => fileRef.current?.click()}
+            className="w-full bg-accent text-accent-fg font-medium py-3 rounded-xl active:scale-[0.98] transition flex items-center justify-center gap-2"
+          >
+            <Camera size={18} /> Choose photo
+          </button>
         </>
       ) : (
         <>
@@ -691,20 +741,12 @@ function PhotoTab({ onAdd }: { onAdd: (items: PendingItem[]) => void }) {
           />
           <div className="flex gap-2">
             <button
-              onClick={() => cameraRef.current?.click()}
+              onClick={() => fileRef.current?.click()}
               disabled={loading}
               className="px-3 py-2.5 rounded-xl border border-border text-sm font-medium disabled:opacity-60 flex items-center gap-1.5"
-              aria-label="Take a new photo"
+              aria-label="Pick a different photo"
             >
-              <Camera size={14} /> Retake
-            </button>
-            <button
-              onClick={() => libraryRef.current?.click()}
-              disabled={loading}
-              className="px-3 py-2.5 rounded-xl border border-border text-sm font-medium disabled:opacity-60 flex items-center gap-1.5"
-              aria-label="Pick from library"
-            >
-              <ImageIcon size={14} /> Library
+              <Camera size={14} /> Change photo
             </button>
             <button
               onClick={reset}
