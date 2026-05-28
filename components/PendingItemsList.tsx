@@ -1,6 +1,7 @@
 "use client";
 
-import { Check, Minus, Plus, Trash2 } from "lucide-react";
+import { useState } from "react";
+import { Check, Clock, Minus, Plus, Trash2 } from "lucide-react";
 
 export type PendingItem = {
   name: string;
@@ -21,6 +22,8 @@ export function itemTotalCarbs(item: PendingItem): number {
 
 type Props = {
   items: PendingItem[];
+  eatenAt: Date | null;
+  onEatenAtChange: (d: Date | null) => void;
   onChange: (i: number, item: PendingItem) => void;
   onRemove: (i: number) => void;
   onSubmit: () => void;
@@ -29,6 +32,8 @@ type Props = {
 
 export default function PendingItemsList({
   items,
+  eatenAt,
+  onEatenAtChange,
   onChange,
   onRemove,
   onSubmit,
@@ -55,6 +60,7 @@ export default function PendingItemsList({
           <span className="text-muted"> net carbs</span>
         </span>
       </div>
+      <TimeRow value={eatenAt} onChange={onEatenAtChange} />
       {items.map((item, i) => {
         const totalCarbs = itemTotalCarbs(item);
         return (
@@ -109,6 +115,83 @@ export default function PendingItemsList({
         </button>
       </div>
     </div>
+  );
+}
+
+function pad(n: number): string {
+  return String(n).padStart(2, "0");
+}
+
+function toLocalInputValue(d: Date): string {
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function formatTimeLabel(d: Date | null): string {
+  if (!d) return "Now";
+  const now = new Date();
+  const sameDay = d.toDateString() === now.toDateString();
+  const yest = new Date(now);
+  yest.setDate(yest.getDate() - 1);
+  const isYesterday = d.toDateString() === yest.toDateString();
+  const time = d.toLocaleTimeString(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  if (sameDay) return `Today, ${time}`;
+  if (isYesterday) return `Yesterday, ${time}`;
+  return `${d.toLocaleDateString(undefined, { month: "short", day: "numeric" })}, ${time}`;
+}
+
+function TimeRow({
+  value,
+  onChange,
+}: {
+  value: Date | null;
+  onChange: (d: Date | null) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+
+  if (editing) {
+    return (
+      <div className="px-4 py-2.5 flex items-center gap-2 bg-background/40">
+        <Clock size={14} className="text-muted shrink-0" />
+        <input
+          type="datetime-local"
+          value={toLocalInputValue(value ?? new Date())}
+          onChange={(e) => {
+            const v = e.target.value;
+            if (v) onChange(new Date(v));
+          }}
+          className="flex-1 min-w-0 bg-background border border-border rounded px-2 py-1 text-sm focus:outline-none focus:border-accent"
+        />
+        <button
+          onClick={() => {
+            onChange(null);
+            setEditing(false);
+          }}
+          className="text-xs text-muted px-2 py-1"
+        >
+          Now
+        </button>
+        <button
+          onClick={() => setEditing(false)}
+          className="text-xs text-accent font-medium px-2 py-1"
+        >
+          Done
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <button
+      onClick={() => setEditing(true)}
+      className="w-full px-4 py-2.5 flex items-center gap-2 text-left text-sm active:bg-border/30"
+    >
+      <Clock size={14} className="text-muted" />
+      <span className={value ? "" : "text-muted"}>{formatTimeLabel(value)}</span>
+      <span className="ml-auto text-xs text-muted">Edit</span>
+    </button>
   );
 }
 

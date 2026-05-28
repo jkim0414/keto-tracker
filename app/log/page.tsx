@@ -72,6 +72,9 @@ export default function LogPage() {
   const [pending, setPending] = useState<PendingItem[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [recents, setRecents] = useState<RecentEntry[]>([]);
+  // null = "log at the moment you tap Log all" (i.e. now). When set, the
+  // batch is back-dated/forward-dated to this wall-clock time.
+  const [eatenAt, setEatenAt] = useState<Date | null>(null);
 
   useEffect(() => {
     fetch("/api/foods/recent")
@@ -110,7 +113,12 @@ export default function LogPage() {
     if (pending.length === 0) return;
     setSubmitting(true);
     try {
-      const localDate = localDateString();
+      // Resolve the timestamp at submit time so "Now" (eatenAt == null) means
+      // "the moment the user tapped Log all", not "the moment they opened
+      // the page".
+      const when = eatenAt ?? new Date();
+      const localDate = localDateString(when);
+      const eatenAtIso = when.toISOString();
       for (const item of pending) {
         await fetch("/api/foods", {
           method: "POST",
@@ -125,6 +133,7 @@ export default function LogPage() {
             source: item.source === "recent" ? "search" : item.source,
             rawInput: item.rawInput,
             barcode: item.barcode,
+            eatenAt: eatenAtIso,
             localDate,
           }),
         });
@@ -172,6 +181,8 @@ export default function LogPage() {
 
       <PendingItemsList
         items={pending}
+        eatenAt={eatenAt}
+        onEatenAtChange={setEatenAt}
         onChange={updateItem}
         onRemove={removeItem}
         onSubmit={submitAll}
