@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useEffect, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   Search,
   ScanLine,
@@ -66,15 +66,33 @@ function offToPending(
   };
 }
 
-export default function LogPage() {
+export default function LogPageWrapper() {
+  return (
+    <Suspense fallback={<div className="text-muted text-sm">Loading…</div>}>
+      <LogPage />
+    </Suspense>
+  );
+}
+
+function LogPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [tab, setTab] = useState<Tab>("search");
   const [pending, setPending] = useState<PendingItem[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [recents, setRecents] = useState<RecentEntry[]>([]);
   // null = "log at the moment you tap Log all" (i.e. now). When set, the
   // batch is back-dated/forward-dated to this wall-clock time.
-  const [eatenAt, setEatenAt] = useState<Date | null>(null);
+  // If the user navigated here from the dashboard while viewing a past day,
+  // we pre-fill eatenAt to noon on that day as a sensible default.
+  const [eatenAt, setEatenAt] = useState<Date | null>(() => {
+    const dateParam = searchParams.get("date");
+    if (!dateParam || !/^\d{4}-\d{2}-\d{2}$/.test(dateParam)) return null;
+    const today = localDateString();
+    if (dateParam === today) return null;
+    const d = new Date(dateParam + "T12:00:00");
+    return isNaN(d.getTime()) ? null : d;
+  });
 
   useEffect(() => {
     fetch("/api/foods/recent")

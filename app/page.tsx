@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { Check, Trash2, X } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, Trash2, X } from "lucide-react";
 import {
   LineChart,
   Line,
@@ -48,23 +48,24 @@ type Summary = {
 export default function Home() {
   const [data, setData] = useState<Summary | null>(null);
   const [loading, setLoading] = useState(true);
+  const [selectedDate, setSelectedDate] = useState<string>(localDateString());
 
-  async function load() {
+  const load = useCallback(async (date: string) => {
     setLoading(true);
-    const today = localDateString();
-    const res = await fetch(`/api/summary?date=${today}`, {
+    const res = await fetch(`/api/summary?date=${date}`, {
       cache: "no-store",
     });
     if (res.ok) setData(await res.json());
     setLoading(false);
-  }
-  useEffect(() => {
-    load();
   }, []);
+
+  useEffect(() => {
+    load(selectedDate);
+  }, [load, selectedDate]);
 
   async function deleteEntry(id: number) {
     const res = await fetch(`/api/foods/${id}`, { method: "DELETE" });
-    if (res.ok) load();
+    if (res.ok) load(selectedDate);
   }
 
   if (loading || !data) {
@@ -89,15 +90,20 @@ export default function Home() {
   const ceilingPct = (KETOSIS_CEILING_G / weekMax) * 100;
   const goalPct = (data.goal / weekMax) * 100;
 
+  const todayIso = localDateString();
+  const isToday = selectedDate === todayIso;
+
   return (
     <div className="space-y-6">
+      <DateNav value={selectedDate} onChange={setSelectedDate} />
+
       <section className="flex flex-col items-center pt-2">
         <CarbRing consumed={data.todayNetCarbs} goal={data.goal} />
         <Link
-          href="/log"
+          href={isToday ? "/log" : `/log?date=${selectedDate}`}
           className="mt-5 inline-flex items-center gap-2 bg-accent text-accent-fg font-medium px-5 py-2.5 rounded-full active:scale-95 transition"
         >
-          Log food
+          {isToday ? "Log food" : "Log food on this day"}
         </Link>
       </section>
 
@@ -184,13 +190,14 @@ export default function Home() {
           />
           <div className="absolute inset-0 flex items-end gap-2">
             {Array.from({ length: 7 }).map((_, i) => {
-              const d = new Date();
+              const d = new Date(selectedDate + "T00:00:00");
               d.setDate(d.getDate() - (6 - i));
               const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
               const found = data.dailyTotals.find((x) => x.localDate === iso);
               const v = found?.netCarbsG ?? 0;
               const h = weekMax > 0 ? (v / weekMax) * 100 : 0;
               const bucket = carbBucket(v, data.goal);
+              const isFocus = iso === selectedDate;
               return (
                 <div
                   key={iso}
@@ -202,6 +209,10 @@ export default function Home() {
                       height: `${Math.max(h, 4)}%`,
                       background: bucketColor(bucket),
                       opacity: v === 0 ? 0.15 : 1,
+                      outline: isFocus
+                        ? "2px solid var(--color-foreground)"
+                        : "none",
+                      outlineOffset: "1px",
                     }}
                     title={`${v.toFixed(1)}g net carbs`}
                   />
@@ -212,7 +223,7 @@ export default function Home() {
         </div>
         <div className="flex gap-2 mt-1.5">
           {Array.from({ length: 7 }).map((_, i) => {
-            const d = new Date();
+            const d = new Date(selectedDate + "T00:00:00");
             d.setDate(d.getDate() - (6 - i));
             return (
               <div
@@ -238,11 +249,11 @@ export default function Home() {
 
       <section>
         <h2 className="text-sm font-medium text-muted mb-2 px-1">
-          Today’s food
+          {foodSectionTitle(selectedDate, todayIso)}
         </h2>
         {data.todayEntries.length === 0 ? (
           <div className="bg-card border border-border rounded-2xl p-6 text-center text-muted text-sm">
-            Nothing logged yet today.
+            {isToday ? "Nothing logged yet today." : "Nothing logged this day."}
           </div>
         ) : (
           <ul className="bg-card border border-border rounded-2xl divide-y divide-border overflow-hidden">
@@ -250,7 +261,7 @@ export default function Home() {
               <TodayFoodRow
                 key={e.id}
                 entry={e}
-                onChanged={load}
+                onChanged={() => load(selectedDate)}
                 onDelete={() => deleteEntry(e.id)}
               />
             ))}
@@ -391,6 +402,88 @@ function TodayFoodRow({
 function formatServings(n: number): string {
   if (Number.isInteger(n)) return String(n);
   return n.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
+}
+
+function foodSectionTitle(date: string, today: string): string {
+  if (date === today) return "Today’s food";
+  const yest = new Date(today + "T00:00:00");
+  yest.setDate(yest.getDate() - 1);
+  const yestIso = `${yest.getFullYear()}-${String(yest.getMonth() + 1).padStart(2, "0")}-${String(yest.getDate()).padStart(2, "0")}`;
+  if (date === yestIso) return "Yesterday’s food";
+  const d = new Date(date + "T00:00:00");
+  return `Food on ${d.toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" })}`;
+}
+
+function DateNav({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (d: string) => void;
+}) {
+  const today = localDateString();
+  const isToday = value === today;
+  const dateObj = new Date(value + "T00:00:00");
+
+  function shift(days: number) {
+    const d = new Date(value + "T00:00:00");
+    d.setDate(d.getDate() + days);
+    const newVal = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    if (newVal > today) return;
+    onChange(newVal);
+  }
+
+  const label = isToday
+    ? "Today"
+    : dateObj.toLocaleDateString(undefined, {
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+      });
+
+  return (
+    <div className="flex items-center justify-between gap-2 bg-card border border-border rounded-2xl px-2 py-1.5">
+      <button
+        onClick={() => shift(-1)}
+        className="p-2 text-muted active:bg-border/40 rounded-lg"
+        aria-label="Previous day"
+      >
+        <ChevronLeft size={18} />
+      </button>
+      <div className="relative flex-1 text-center">
+        <input
+          type="date"
+          value={value}
+          max={today}
+          onChange={(e) => e.target.value && onChange(e.target.value)}
+          className="absolute inset-0 opacity-0 cursor-pointer"
+          aria-label="Pick a date"
+        />
+        <div className="text-sm font-medium pointer-events-none flex items-center justify-center gap-1.5">
+          {label}
+          {!isToday && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onChange(today);
+              }}
+              className="pointer-events-auto text-xs text-accent font-normal underline"
+            >
+              Today
+            </button>
+          )}
+        </div>
+      </div>
+      <button
+        onClick={() => shift(1)}
+        disabled={isToday}
+        className="p-2 text-muted active:bg-border/40 rounded-lg disabled:opacity-30"
+        aria-label="Next day"
+      >
+        <ChevronRight size={18} />
+      </button>
+    </div>
+  );
 }
 
 function WeightTrend({
