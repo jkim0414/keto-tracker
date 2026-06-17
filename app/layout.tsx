@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Geist } from "next/font/google";
 import Link from "next/link";
+import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
 import BottomNav from "@/components/BottomNav";
 
@@ -52,6 +53,7 @@ export default function RootLayout({
           {children}
         </main>
         <BottomNav />
+        <Analytics />
       </body>
     </html>
   );
